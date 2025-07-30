@@ -1,0 +1,9 @@
+vm_prefix: "AlmaVM"
+vm_count: 2
+vm_memory: 2GB
+vm_disk_size_gb: 30
+vm_generation: 2
+vm_switch: "InternalLabSwitch"
+ks_version: "v1"
+iso_path: "C:\\ISOs\\AlmaLinux-latest-x86_64.iso"
+ks_path: "config\\alma-ks-v1.cfg"
