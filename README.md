@@ -82,43 +82,43 @@ graph TD
 #### Breakdown:
 
 1. Terraform Infrastructure Deployment (8-12 minutes)
-• Resource Group: ~30 seconds
-• Virtual Network & Subnet: ~1-2 minutes
-• Public IPs: ~1 minute
-• Network Security Group: ~1 minute
-• Network Interfaces: ~2 minutes
-• VM Creation (2x Standard_D4s_v3): ~5-8 minutes
-• OS disk allocation and VM provisioning
-• Network attachment
-• Boot diagnostics setup
+   - Resource Group: ~30 seconds
+   - Virtual Network & Subnet: ~1-2 minutes
+   - Public IPs: ~1 minute
+   - Network Security Group: ~1 minute
+   - Network Interfaces: ~2 minutes
+   - VM Creation (2x Standard_D4s_v3): ~5-8 minutes
+   - OS disk allocation and VM provisioning
+   - Network attachment
+   - Boot diagnostics setup
 
 2. Windows Boot & Initial Setup (5-8 minutes)
-• Windows Server 2025 first boot: ~3-5 minutes
-• Windows Updates/patches (if any): ~2-3 minutes
-• AutoLogon configuration: ~30 seconds
+   - Windows Server 2025 first boot: ~3-5 minutes
+   - Windows Updates/patches (if any): ~2-3 minutes
+   - AutoLogon configuration: ~30 seconds
 
-3. Bootstrap Script Execution (12-15 minutes)
-• Install-WindowsFeature (Hyper-V, Failover-Clustering, FS-FileServer): ~8-12 minutes
-• This includes a mandatory restart after Hyper-V installation
-• Second boot after restart: ~2-3 minutes
-• VM Switch creation: ~30 seconds
-• Storage Pool/Volume creation: ~1-2 minutes
-• Cluster validation (Test-Cluster): ~2-3 minutes
-• Cluster creation (New-Cluster): ~1-2 minutes
-• Enable Storage Spaces Direct: ~1-2 minutes
+1. Bootstrap Script Execution (12-15 minutes)
+   - Install-WindowsFeature (Hyper-V, Failover-Clustering, FS-FileServer): ~8-12 minutes
+   - This includes a mandatory restart after Hyper-V installation
+   - Second boot after restart: ~2-3 minutes
+   - VM Switch creation: ~30 seconds
+   - Storage Pool/Volume creation: ~1-2 minutes
+   - Cluster validation (Test-Cluster): ~2-3 minutes
+   - Cluster creation (New-Cluster): ~1-2 minutes
+   - Enable Storage Spaces Direct: ~1-2 minutes
 
 #### Factors That Could Affect Timing:
 
 **Faster (+):**
-• UK South region typically has good performance
-• Standard_D4s_v3 VMs are well-provisioned
-• Your current internet connection speed
+- UK South region typically has good performance
+- Standard_D4s_v3 VMs are well-provisioned
+- Your current internet connection speed
 
 **Slower (-):**
-• Azure region load at deployment time
-• Windows Update requirements
-• Cluster validation issues (network/storage)
-• If Azure needs to move VMs to different hosts
+- Azure region load at deployment time
+- Windows Update requirements
+- Cluster validation issues (network/storage)
+- If Azure needs to move VMs to different hosts
 
 *Critical Points:*
 1. Automatic Restart: The script will restart both VMs after installing Hyper-V (this is mandatory)
@@ -126,14 +126,14 @@ graph TD
 3. Storage Spaces Direct: Can take a few minutes to initialize properly
 
 *Monitoring Progress:*
-• Use Azure Portal to monitor VM status
-• RDP into VMs to check bootstrap script progress
-• Check Windows Event Logs if needed
+- Use Azure Portal to monitor VM status
+- RDP into VMs to check bootstrap script progress
+- Check Windows Event Logs if needed
 
 
 # Nested VMs Repo 
 
-Absolutely, Serge — here’s how we can scaffold a reusable, versioned repo to automate nested AlmaLinux provisioning inside your Azure-based Hyper-V cluster. This structure includes param-driven VM creation, ISO fetch logic, unattended installation via Kickstart, and support for post-install bootstraps. Clean, sharable, and future-proof.
+This is a reusable, versioned repo to automate nested AlmaLinux provisioning inside your Azure-based Hyper-V cluster. This structure includes param-driven VM creation, ISO fetch logic, unattended installation via Kickstart, and support for post-install bootstraps. Clean, sharable, and future-proof.
 
 ---
 
