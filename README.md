@@ -15,7 +15,7 @@ graph TD
   C[Azure VM: hyperv-node-1] -->|Nested Hyper-V| D[Test VMs]
   A --> E[Internal VNet]
   C --> E
-  A --> F[Storage Pool (S2D)]
+  A --> F["Storage Pool (S2D)"]
   C --> F
   F --> G[Cluster: S2DCluster]
 ```
