@@ -33,19 +33,19 @@ try {
     if ($hypervFeature.InstallState -ne "Installed") {
         throw "Hyper-V feature is not installed. Please install it first: Install-WindowsFeature -Name Hyper-V -IncludeManagementTools -Restart"
     }
-    Write-Host "✓ Hyper-V feature is installed"
+    Write-Host "[OK] Hyper-V feature is installed"
 
     # Check if virtual switch already exists
     Write-Host "Checking for existing virtual switch..."
     $existingSwitch = Get-VMSwitch -Name $SwitchName -ErrorAction SilentlyContinue
     
     if ($existingSwitch) {
-        Write-Host "✓ Virtual switch '$SwitchName' already exists"
+        Write-Host "[OK] Virtual switch '$SwitchName' already exists"
         Write-Host "  Switch Type: $($existingSwitch.SwitchType)"
     } else {
         Write-Host "Creating internal virtual switch '$SwitchName'..."
         $switch = New-VMSwitch -Name $SwitchName -SwitchType Internal
-        Write-Host "✓ Virtual switch created: $($switch.Name)"
+        Write-Host "[OK] Virtual switch created: $($switch.Name)"
         
         Start-Sleep -Seconds 3
         
@@ -55,7 +55,7 @@ try {
         if ($adapter) {
             Remove-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
             New-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -IPAddress $HostIP -PrefixLength $PrefixLength -ErrorAction Stop
-            Write-Host "✓ IP address configured: $HostIP/$PrefixLength"
+            Write-Host "[OK] IP address configured: $HostIP/$PrefixLength"
         } else {
             throw "Could not find network adapter for the virtual switch"
         }
@@ -67,12 +67,12 @@ try {
         $existingNAT = Get-NetNat -Name $NATName -ErrorAction SilentlyContinue
         
         if ($existingNAT) {
-            Write-Host "✓ NAT configuration already exists"
+            Write-Host "[OK] NAT configuration already exists"
         } else {
             Write-Host "Creating NAT configuration..."
             try {
                 $nat = New-NetNat -Name $NATName -InternalIPInterfaceAddressPrefix "192.168.100.0/24"
-                Write-Host "✓ NAT configuration created successfully"
+                Write-Host "[OK] NAT configuration created successfully"
             } catch {
                 Write-Warning "Could not create NAT configuration: $($_.Exception.Message)"
             }
@@ -83,9 +83,9 @@ try {
     Write-Host "==========================================="
     Write-Host "SETUP COMPLETE!"
     Write-Host "==========================================="
-    Write-Host "✓ Switch Name: $SwitchName"
-    Write-Host "✓ Host IP: $HostIP/$PrefixLength"
-    Write-Host "✓ VM IP Range: 192.168.100.2 - 192.168.100.254"
+    Write-Host "[OK] Switch Name: $SwitchName"
+    Write-Host "[OK] Host IP: $HostIP/$PrefixLength"
+    Write-Host "[OK] VM IP Range: 192.168.100.2 - 192.168.100.254"
     Write-Host ""
     Write-Host "Virtual switch is ready for nested VM provisioning!"
     

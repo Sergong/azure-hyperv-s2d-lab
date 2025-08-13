@@ -25,13 +25,13 @@ function Test-WinRMConnectivity {
     try {
         $result = Test-WSMan -ComputerName $ComputerName -ErrorAction Stop
         if ($result) {
-            Write-Host "✓ WinRM connectivity to ${ComputerName}: SUCCESS"
+            Write-Host "[OK] WinRM connectivity to ${ComputerName}: SUCCESS"
             Write-Host "  ProductVendor: $($result.ProductVendor)"
             Write-Host "  ProductVersion: $($result.ProductVersion)"
             return $true
         }
     } catch {
-        Write-Host "✗ WinRM connectivity to ${ComputerName}: FAILED"
+        Write-Host "[FAIL] WinRM connectivity to ${ComputerName}: FAILED"
         Write-Host "  Error: $($_.Exception.Message)"
         return $false
     }
@@ -66,7 +66,7 @@ function Test-PSRemoting {
         } -ErrorAction Stop
         
         if ($result) {
-            Write-Host "✓ PowerShell Remoting to ${ComputerName}: SUCCESS"
+            Write-Host "[OK] PowerShell Remoting to ${ComputerName}: SUCCESS"
             Write-Host "  Remote Computer: $($result.ComputerName)"
             Write-Host "  Remote User: $($result.Domain)\$($result.UserName)"
             Write-Host "  Remote OS: $($result.OSVersion)"
@@ -75,7 +75,7 @@ function Test-PSRemoting {
             return $true
         }
     } catch {
-        Write-Host "✗ PowerShell Remoting to ${ComputerName}: FAILED"
+        Write-Host "[FAIL] PowerShell Remoting to ${ComputerName}: FAILED"
         Write-Host "  Error: $($_.Exception.Message)"
         
         # Provide troubleshooting guidance
@@ -111,16 +111,16 @@ function Test-ClusterPrerequisites {
                 } -ErrorAction SilentlyContinue
                 
                 if ($clusterFeature -and $clusterFeature.InstallState -eq "Installed") {
-                    Write-Host "✓ Failover Clustering feature installed on $computer"
+                    Write-Host "[OK] Failover Clustering feature installed on $computer"
                 } else {
-                    Write-Host "✗ Failover Clustering feature not installed on $computer"
+                    Write-Host "[FAIL] Failover Clustering feature not installed on $computer"
                 }
             }
         }
         
         return $true
     } catch {
-        Write-Host "✗ Cluster prerequisites test failed: $($_.Exception.Message)"
+        Write-Host "[FAIL] Cluster prerequisites test failed: $($_.Exception.Message)"
         return $false
     }
 }
@@ -172,11 +172,11 @@ Write-Host "TEST RESULTS SUMMARY"
 Write-Host "==========================================="
 
 if ($allTestsPassed) {
-    Write-Host "✓ ALL TESTS PASSED"
+    Write-Host "[SUCCESS] ALL TESTS PASSED"
     Write-Host "PowerShell Remoting is working correctly between nodes"
     Write-Host "Cluster configuration should be able to proceed"
 } else {
-    Write-Host "✗ SOME TESTS FAILED"
+    Write-Host "[WARNING] SOME TESTS FAILED"
     Write-Host "PowerShell Remoting needs attention before proceeding with clustering"
 }
 
