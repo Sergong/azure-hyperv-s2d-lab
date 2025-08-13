@@ -41,7 +41,8 @@ try {
     Write-Host "✓ Hyper-V feature is installed"
 
     # Check if virtual switch already exists
-    Write-Host "`nChecking for existing virtual switch..."
+    Write-Host ""
+    Write-Host "Checking for existing virtual switch..."
     $existingSwitch = Get-VMSwitch -Name $SwitchName -ErrorAction SilentlyContinue
     
     if ($existingSwitch) {
@@ -82,7 +83,6 @@ try {
         Write-Host "Creating internal virtual switch '$SwitchName'..."
         
         # Create an internal switch for nested VMs
-        # Internal switch allows communication between host and VMs, and between VMs
         $switch = New-VMSwitch -Name $SwitchName -SwitchType Internal
         Write-Host "✓ Virtual switch created: $($switch.Name)"
         
@@ -109,8 +109,9 @@ try {
         }
     }
     
-    # Check and create NAT configuration if needed (only on one node to avoid conflicts)
-    Write-Host "`nChecking NAT configuration..."
+    # Check and create NAT configuration
+    Write-Host ""
+    Write-Host "Checking NAT configuration..."
     $existingNAT = Get-NetNat -Name $NATName -ErrorAction SilentlyContinue
     
     if ($existingNAT) {
@@ -136,7 +137,8 @@ try {
     }
     
     # Display final configuration summary
-    Write-Host "`n==========================================="
+    Write-Host ""
+    Write-Host "==========================================="
     Write-Host "VIRTUAL SWITCH SETUP COMPLETE!"
     Write-Host "==========================================="
     
@@ -149,7 +151,8 @@ try {
     $finalIP = Get-NetIPAddress -InterfaceIndex $finalAdapter.InterfaceIndex -AddressFamily IPv4
     Write-Host "✓ Host IP: $($finalIP.IPAddress)/$($finalIP.PrefixLength)"
     
-    Write-Host "`nNested VM Network Configuration:"
+    Write-Host ""
+    Write-Host "Nested VM Network Configuration:"
     Write-Host "  - VM Switch: $SwitchName"
     Write-Host "  - Network Range: 192.168.100.0/24"
     Write-Host "  - Host IP: $($finalIP.IPAddress)"
@@ -164,16 +167,19 @@ try {
         Write-Host "⚠ NAT not configured - VMs will have limited internet access"
     }
     
-    Write-Host "`n🎉 Virtual switch is ready for nested VM provisioning!"
+    Write-Host ""
+    Write-Host "🎉 Virtual switch is ready for nested VM provisioning!"
     
 } catch {
     Write-Error "Failed to setup virtual switch: $($_.Exception.Message)"
-    Write-Host "`nTroubleshooting steps:"
+    Write-Host ""
+    Write-Host "Troubleshooting steps:"
     Write-Host "1. Ensure Hyper-V is properly installed and enabled"
     Write-Host "2. Check if running as Administrator"
     Write-Host "3. Verify no conflicting network configurations exist"
     Write-Host "4. Check Windows Firewall settings"
-    Write-Host "`nManual commands to try:"
+    Write-Host ""
+    Write-Host "Manual commands to try:"
     Write-Host "  New-VMSwitch -Name '$SwitchName' -SwitchType Internal"
     Write-Host "  New-NetIPAddress -InterfaceAlias 'vEthernet ($SwitchName)' -IPAddress '$HostIP' -PrefixLength $PrefixLength"
     Write-Host "  New-NetNat -Name '$NATName' -InternalIPInterfaceAddressPrefix '192.168.100.0/24'"
@@ -182,8 +188,10 @@ try {
     exit 1
 }
 
-Write-Host "`nSetup log saved to: C:\VirtualSwitch-Setup-Log.txt"
+Write-Host ""
+Write-Host "Setup log saved to: C:\VirtualSwitch-Setup-Log.txt"
 Stop-Transcript
 
-Write-Host "`nPress any key to exit..."
+Write-Host ""
+Write-Host "Press any key to exit..."
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
