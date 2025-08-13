@@ -248,6 +248,29 @@ New-Item -ItemType Directory -Path $vmPath, $vhdPath -Force | Out-Null
 $ksFloppyPath = "$vhdPath\Kickstart"
 New-Item -ItemType Directory -Path $ksFloppyPath -Force | Out-Null
 
+# Function to detect if ISO has embedded kickstart (custom ISO)
+function Test-CustomISO {
+    param([string]$ISOPath)
+    
+    # Check if this is a custom ISO by looking at the filename pattern
+    $isoName = Split-Path $ISOPath -Leaf
+    if ($isoName -match "Custom\.iso$") {
+        return $true
+    }
+    
+    # Additional check: mount ISO temporarily and look for embedded ks.cfg
+    try {
+        $mountResult = Mount-DiskImage -ImagePath $ISOPath -PassThru -ErrorAction Stop
+        $driveLetter = ($mountResult | Get-Volume).DriveLetter
+        $hasKickstart = Test-Path "${driveLetter}:\ks.cfg"
+        Dismount-DiskImage -ImagePath $ISOPath -ErrorAction Stop
+        return $hasKickstart
+    } catch {
+        # If we can't mount/check, assume it's not a custom ISO
+        return $false
+    }
+}
+
 # Validate required paths before proceeding
 if (-not (Test-Path $isoPath)) {
     Write-Error "AlmaLinux ISO not found: $isoPath"
@@ -262,6 +285,16 @@ try {
     exit 1
 }
 
+# Detect if using custom ISO with embedded kickstart
+$isCustomISO = Test-CustomISO -ISOPath $isoPath
+
+if ($isCustomISO) {
+    Write-Host "Detected custom ISO with embedded kickstart parameters"
+    Write-Host "Skipping kickstart media creation - fully automated installation enabled"
+} else {
+    Write-Host "Using standard ISO - kickstart media will be created for manual boot parameter entry"
+}
+
 # Provision VMs with AlmaLinux ISO and Kickstart
 for ($i = 1; $i -le $vmCount; $i++) {
     $vmName = "$vmPrefix-$i"
@@ -270,21 +303,32 @@ for ($i = 1; $i -le $vmCount; $i++) {
     Write-Host "Creating VM: $vmName"
     
     try {
-        # Create kickstart media based on VM generation
-        if ($vmGeneration -eq 1) {
-            # Gen 1 VMs support floppy drives
-            $floppyFile = "$ksFloppyPath\$vmName-ks.vhd"
-            New-KickstartFloppy -KickstartPath $ksPath -FloppyPath $floppyFile
-            $kickstartMedia = $floppyFile
-            $kickstartType = "floppy"
-            $kickstartLocation = "hd:fd0:/ks.cfg"
+        # Only create kickstart media if NOT using custom ISO
+        $kickstartMedia = $null
+        $kickstartType = $null
+        $kickstartLocation = $null
+        
+        if (-not $isCustomISO) {
+            # Create kickstart media based on VM generation (only for standard ISOs)
+            if ($vmGeneration -eq 1) {
+                # Gen 1 VMs support floppy drives
+                $floppyFile = "$ksFloppyPath\$vmName-ks.vhd"
+                New-KickstartFloppy -KickstartPath $ksPath -FloppyPath $floppyFile
+                $kickstartMedia = $floppyFile
+                $kickstartType = "floppy"
+                $kickstartLocation = "hd:fd0:/ks.cfg"
+            } else {
+                # Gen 2 VMs don't support floppy - use VHD as secondary disk
+                $kickstartVhdFile = "$ksFloppyPath\$vmName-ks.vhd"
+                New-KickstartVHD -KickstartPath $ksPath -VHDPath $kickstartVhdFile
+                $kickstartMedia = $kickstartVhdFile
+                $kickstartType = "vhd"
+                $kickstartLocation = "hd:sdb1:/ks.cfg"
+            }
         } else {
-            # Gen 2 VMs don't support floppy - use VHD as secondary disk
-            $kickstartVhdFile = "$ksFloppyPath\$vmName-ks.vhd"
-            New-KickstartVHD -KickstartPath $ksPath -VHDPath $kickstartVhdFile
-            $kickstartMedia = $kickstartVhdFile
-            $kickstartType = "vhd"
-            $kickstartLocation = "hd:sdb1:/ks.cfg"
+            # For custom ISOs, kickstart is embedded in the ISO itself
+            $kickstartLocation = "cdrom:/ks.cfg"
+            Write-Host "  Using embedded kickstart from custom ISO"
         }
 
         # Create VM
@@ -308,48 +352,53 @@ for ($i = 1; $i -le $vmCount; $i++) {
         Write-Host "  Attaching AlmaLinux ISO"
         Add-VMDvdDrive -VMName $vmName -Path $isoPath -ErrorAction Stop
         
-        # Attach kickstart media based on generation
-        if ($vmGeneration -eq 1) {
-            Write-Host "  Attaching kickstart floppy"
-            Add-VMFloppyDiskDrive -VMName $vmName -Path $kickstartMedia -ErrorAction Stop
-        } else {
-            Write-Host "  Attaching kickstart VHD as secondary disk"
-            Add-VMHardDiskDrive -VMName $vmName -Path $kickstartMedia -ErrorAction Stop
+        # Only attach kickstart media if NOT using custom ISO
+        if (-not $isCustomISO -and $kickstartMedia) {
+            # Attach kickstart media based on generation
+            if ($vmGeneration -eq 1) {
+                Write-Host "  Attaching kickstart floppy"
+                Add-VMFloppyDiskDrive -VMName $vmName -Path $kickstartMedia -ErrorAction Stop
+            } else {
+                Write-Host "  Attaching kickstart VHD as secondary disk"
+                Add-VMHardDiskDrive -VMName $vmName -Path $kickstartMedia -ErrorAction Stop
+            }
         }
         
         # Configure boot order and parameters
         if ($vmGeneration -eq 2) {
-            # For Generation 2 VMs, configure boot from DVD and set kernel parameters
+            # For Generation 2 VMs, configure boot from DVD
             $dvdDrive = Get-VMDvdDrive -VMName $vmName
             Set-VMFirmware -VMName $vmName -FirstBootDevice $dvdDrive -ErrorAction Stop
             
-            # Configure automatic kickstart boot parameters for Gen 2 VMs
-            # This modifies the boot entry to include kickstart parameters
-            try {
-                Write-Host "  Configuring automatic kickstart boot parameters..."
-                
-                # Get the boot entry and modify it to include kickstart parameters
-                $bootParameters = "inst.ks=$kickstartLocation inst.text console=tty0 console=ttyS0,115200 rd.debug rd.udev.debug"
-                
-                # Note: For Gen 2 VMs, we'll need to modify the boot configuration
-                # This is more complex and may require manual intervention at first boot
+            if ($isCustomISO) {
+                # Custom ISO with embedded kickstart - fully automated
+                Write-Host "  Gen 2 VM configured for fully automated installation"
+                Write-Host "  Custom ISO contains embedded kickstart parameters"
+                Write-Host "  No manual intervention required - installation will proceed automatically"
+            } else {
+                # Standard ISO - requires manual boot parameter entry
                 Write-Host "  Gen 2 VM configured to boot from DVD"
+                $bootParameters = "inst.ks=$kickstartLocation inst.text console=tty0 console=ttyS0,115200 rd.debug rd.udev.debug"
                 Write-Host "  IMPORTANT: On first boot, press TAB at the boot menu and add these parameters:"
                 Write-Host "  $bootParameters"
                 Write-Host "  Or press 'e' to edit, add to the linux line, then press Ctrl+X"
-                
-            } catch {
-                Write-Warning "Could not automatically configure kickstart parameters: $($_.Exception.Message)"
-                Write-Host "  Manual boot parameter configuration required"
             }
         } else {
-            # For Generation 1 VMs, set boot order and configure for automatic kickstart
-            Set-VMBios -VMName $vmName -StartupOrder @("CD", "Floppy", "IDE") -ErrorAction Stop
-            
-            Write-Host "  Configured Gen 1 VM boot order: CD, Floppy, IDE"
-            Write-Host "  Kickstart parameters: inst.ks=$kickstartLocation inst.text console=tty0 console=ttyS0,115200"
-            Write-Host "  IMPORTANT: On first boot, press TAB at the boot menu and add these parameters:"
-            Write-Host "  inst.ks=$kickstartLocation inst.text console=tty0 console=ttyS0,115200"
+            # For Generation 1 VMs, set boot order
+            if ($isCustomISO) {
+                # Custom ISO - only need DVD boot
+                Set-VMBios -VMName $vmName -StartupOrder @("CD", "IDE") -ErrorAction Stop
+                Write-Host "  Configured Gen 1 VM for fully automated installation"
+                Write-Host "  Custom ISO contains embedded kickstart parameters"
+                Write-Host "  No manual intervention required - installation will proceed automatically"
+            } else {
+                # Standard ISO - need CD and Floppy boot order
+                Set-VMBios -VMName $vmName -StartupOrder @("CD", "Floppy", "IDE") -ErrorAction Stop
+                Write-Host "  Configured Gen 1 VM boot order: CD, Floppy, IDE"
+                $bootParameters = "inst.ks=$kickstartLocation inst.text console=tty0 console=ttyS0,115200"
+                Write-Host "  IMPORTANT: On first boot, press TAB at the boot menu and add these parameters:"
+                Write-Host "  $bootParameters"
+            }
         }
         
         Write-Host "  Starting VM for automated installation"

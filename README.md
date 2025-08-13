@@ -306,6 +306,43 @@ ssh root@$vmIp "bash /root/postinstall.sh"
 
 ---
 
+### 🚀 Making VMs Highly Available
+
+After provisioning VMs, you can make them highly available for automatic failover:
+
+```powershell
+# Navigate to the scripts directory
+cd NestedAlmaLab\scripts
+
+# Make all VMs highly available
+.\make-vms-ha.ps1
+
+# Or make specific VMs HA
+.\make-vms-ha.ps1 -VMNames "AlmaVM-1","AlmaVM-2"
+
+# Preview changes first
+.\make-vms-ha.ps1 -WhatIf
+```
+
+**What this does:**
+- Moves VM files to Cluster Shared Volume storage
+- Adds VMs to the failover cluster as highly available resources
+- Configures automatic failover and restart policies
+- Enables VM health monitoring and automatic recovery
+- Sets up load balancing across cluster nodes
+
+**Management Commands:**
+```powershell
+# Check HA VM status
+Get-ClusterResource | Where-Object ResourceType -eq 'Virtual Machine'
+
+# Manual failover test
+Move-ClusterVirtualMachineRole -Name "AlmaVM-1" -Node "hyperv-node-1"
+
+# Monitor cluster health
+Get-ClusterNode | Select Name,State
+```
+
 ## ⚠️ Known Issues and Solutions
 
 ### Kickstart Boot Parameters Issue
