@@ -1,3 +1,22 @@
+# AlmaLinux VM Provisioning Script with Kickstart Automation
+# 
+# FIXES APPLIED:
+# 1. Fixed VHD minimum size issue - changed floppy size from 1.44MB to 3MB (Hyper-V minimum)
+# 2. Fixed Generation 2 VM compatibility - Gen 2 VMs don't support floppy drives
+#    - Gen 1 VMs: Use floppy disk for kickstart (hd:fd0:/ks.cfg)
+#    - Gen 2 VMs: Use secondary VHD for kickstart (hd:sdb1:/ks.cfg)
+# 3. Added proper error handling with try/catch blocks
+# 4. Added path validation for ISO files and VM switches
+# 5. Added cleanup on failure to prevent orphaned resources
+# 6. Improved disk initialization and partitioning for VHD creation
+# 7. Added informative messages about kickstart location for each VM generation
+#
+# USAGE:
+# - For Gen 1 VMs: Kickstart will be loaded automatically from floppy
+# - For Gen 2 VMs: You may need to specify kickstart location manually at boot:
+#   Boot parameters: inst.ks=hd:sdb1:/ks.cfg inst.text console=ttyS0,115200
+#
+
 # Load configuration from YAML file
 function ConvertFrom-Yaml {
     param([string]$YamlContent)
@@ -77,7 +96,7 @@ Write-Host "VM Path: $vmPath"
 Write-Host "VHD Path: $vhdPath"
 Write-Host "====================================`n"
 
-# Function to create a virtual floppy disk with kickstart file
+# Function to create a virtual disk with kickstart file for Gen 1 VMs
 function New-KickstartFloppy {
     param(
         [string]$KickstartPath,
@@ -86,28 +105,137 @@ function New-KickstartFloppy {
     
     Write-Host "Creating kickstart floppy disk: $FloppyPath"
     
-    # Create a 1.44MB floppy disk image
-    $floppySize = 1440KB
-    $floppy = New-VHD -Path $FloppyPath -SizeBytes $floppySize -Fixed
-    
-    # Mount the VHD to copy the kickstart file
-    $mountResult = Mount-VHD -Path $FloppyPath -Passthru
-    $driveLetter = ($mountResult | Get-Disk | Get-Partition | Get-Volume).DriveLetter
-    
-    if ($driveLetter) {
-        # Format the floppy disk
-        Format-Volume -DriveLetter $driveLetter -FileSystem FAT -Confirm:$false | Out-Null
+    try {
+        # Create a floppy disk image (minimum 3MB required by Hyper-V)
+        $floppySize = 3MB
+        $floppy = New-VHD -Path $FloppyPath -SizeBytes $floppySize -Fixed -ErrorAction Stop
         
-        # Copy kickstart file to floppy
-        Copy-Item $KickstartPath "${driveLetter}:\ks.cfg"
+        # Mount the VHD to copy the kickstart file
+        $mountResult = Mount-VHD -Path $FloppyPath -Passthru -ErrorAction Stop
+        $disk = $mountResult | Get-Disk
         
-        Write-Host "Copied kickstart file to floppy disk"
+        # Initialize disk if needed
+        if ($disk.PartitionStyle -eq 'RAW') {
+            Initialize-Disk -Number $disk.Number -PartitionStyle MBR -ErrorAction Stop
+            $partition = New-Partition -DiskNumber $disk.Number -UseMaximumSize -AssignDriveLetter -ErrorAction Stop
+            Format-Volume -DriveLetter $partition.DriveLetter -FileSystem FAT -Confirm:$false -ErrorAction Stop | Out-Null
+            $driveLetter = $partition.DriveLetter
+        } else {
+            $driveLetter = ($disk | Get-Partition | Get-Volume).DriveLetter
+        }
+        
+        if ($driveLetter) {
+            # Copy kickstart file to floppy
+            Copy-Item $KickstartPath "${driveLetter}:\ks.cfg" -ErrorAction Stop
+            Write-Host "Copied kickstart file to floppy disk"
+        } else {
+            throw "Could not get drive letter for mounted floppy"
+        }
+        
+        # Unmount the VHD
+        Dismount-VHD -Path $FloppyPath -ErrorAction Stop
+        
+        return $FloppyPath
     }
+    catch {
+        Write-Error "Failed to create kickstart floppy: $($_.Exception.Message)"
+        if (Test-Path $FloppyPath) {
+            try { Dismount-VHD -Path $FloppyPath -ErrorAction SilentlyContinue } catch {}
+            Remove-Item $FloppyPath -Force -ErrorAction SilentlyContinue
+        }
+        throw
+    }
+}
+
+# Function to create a small ISO with kickstart file for Gen 2 VMs
+function New-KickstartISO {
+    param(
+        [string]$KickstartPath,
+        [string]$ISOPath
+    )
     
-    # Unmount the VHD
-    Dismount-VHD -Path $FloppyPath
+    Write-Host "Creating kickstart ISO: $ISOPath"
     
-    return $FloppyPath
+    try {
+        # Create temporary directory for ISO contents
+        $tempDir = New-TemporaryFile | ForEach-Object { Remove-Item $_; New-Item -ItemType Directory -Path $_ -Force }
+        
+        # Copy kickstart file to temp directory
+        Copy-Item $KickstartPath "$tempDir\ks.cfg" -ErrorAction Stop
+        
+        # Use Windows built-in tools to create ISO (requires Windows 10/Server 2016+)
+        # Alternative: Use external tool like oscdimg.exe from Windows ADK
+        $oscdimgPath = "${env:ProgramFiles(x86)}\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
+        
+        if (Test-Path $oscdimgPath) {
+            & $oscdimgPath -n -m "$tempDir" "$ISOPath" | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw "oscdimg.exe failed with exit code $LASTEXITCODE"
+            }
+        } else {
+            # Fallback: Create a small VHD instead of ISO for Gen 2 VMs
+            Write-Warning "oscdimg.exe not found. Creating VHD instead of ISO for Gen 2 VM."
+            $vhdPath = $ISOPath -replace '\.iso$', '.vhd'
+            return New-KickstartVHD -KickstartPath $KickstartPath -VHDPath $vhdPath
+        }
+        
+        # Clean up temp directory
+        Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        
+        Write-Host "Created kickstart ISO successfully"
+        return $ISOPath
+    }
+    catch {
+        Write-Error "Failed to create kickstart ISO: $($_.Exception.Message)"
+        # Clean up
+        Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path $ISOPath) {
+            Remove-Item $ISOPath -Force -ErrorAction SilentlyContinue
+        }
+        throw
+    }
+}
+
+# Function to create a small VHD with kickstart file for Gen 2 VMs
+function New-KickstartVHD {
+    param(
+        [string]$KickstartPath,
+        [string]$VHDPath
+    )
+    
+    Write-Host "Creating kickstart VHD: $VHDPath"
+    
+    try {
+        # Create a small VHD (10MB should be sufficient)
+        $vhdSize = 10MB
+        $vhd = New-VHD -Path $VHDPath -SizeBytes $vhdSize -Fixed -ErrorAction Stop
+        
+        # Mount the VHD to copy the kickstart file
+        $mountResult = Mount-VHD -Path $VHDPath -Passthru -ErrorAction Stop
+        $disk = $mountResult | Get-Disk
+        
+        # Initialize disk
+        Initialize-Disk -Number $disk.Number -PartitionStyle GPT -ErrorAction Stop
+        $partition = New-Partition -DiskNumber $disk.Number -UseMaximumSize -AssignDriveLetter -ErrorAction Stop
+        Format-Volume -DriveLetter $partition.DriveLetter -FileSystem FAT32 -Confirm:$false -ErrorAction Stop | Out-Null
+        
+        # Copy kickstart file
+        Copy-Item $KickstartPath "$($partition.DriveLetter):\ks.cfg" -ErrorAction Stop
+        
+        # Unmount the VHD
+        Dismount-VHD -Path $VHDPath -ErrorAction Stop
+        
+        Write-Host "Created kickstart VHD successfully"
+        return $VHDPath
+    }
+    catch {
+        Write-Error "Failed to create kickstart VHD: $($_.Exception.Message)"
+        if (Test-Path $VHDPath) {
+            try { Dismount-VHD -Path $VHDPath -ErrorAction SilentlyContinue } catch {}
+            Remove-Item $VHDPath -Force -ErrorAction SilentlyContinue
+        }
+        throw
+    }
 }
 
 # Create folders
@@ -117,62 +245,118 @@ New-Item -ItemType Directory -Path $vmPath, $vhdPath -Force | Out-Null
 $ksFloppyPath = "$vhdPath\Kickstart"
 New-Item -ItemType Directory -Path $ksFloppyPath -Force | Out-Null
 
+# Validate required paths before proceeding
+if (-not (Test-Path $isoPath)) {
+    Write-Error "AlmaLinux ISO not found: $isoPath"
+    exit 1
+}
+
+# Check if the VM switch exists
+try {
+    Get-VMSwitch -Name $vmSwitchName -ErrorAction Stop | Out-Null
+} catch {
+    Write-Error "VM Switch '$vmSwitchName' not found. Please create it first."
+    exit 1
+}
+
 # Provision VMs with AlmaLinux ISO and Kickstart
 for ($i = 1; $i -le $vmCount; $i++) {
     $vmName = "$vmPrefix-$i"
     $vhdFile = "$vhdPath\$vmName.vhdx"
-    $floppyFile = "$ksFloppyPath\$vmName-ks.vhd"
     
     Write-Host "Creating VM: $vmName"
     
-    # Create kickstart floppy for this VM
-    New-KickstartFloppy -KickstartPath $ksPath -FloppyPath $floppyFile
+    try {
+        # Create kickstart media based on VM generation
+        if ($vmGeneration -eq 1) {
+            # Gen 1 VMs support floppy drives
+            $floppyFile = "$ksFloppyPath\$vmName-ks.vhd"
+            New-KickstartFloppy -KickstartPath $ksPath -FloppyPath $floppyFile
+            $kickstartMedia = $floppyFile
+            $kickstartType = "floppy"
+            $kickstartLocation = "hd:fd0:/ks.cfg"
+        } else {
+            # Gen 2 VMs don't support floppy - use VHD as secondary disk
+            $kickstartVhdFile = "$ksFloppyPath\$vmName-ks.vhd"
+            New-KickstartVHD -KickstartPath $ksPath -VHDPath $kickstartVhdFile
+            $kickstartMedia = $kickstartVhdFile
+            $kickstartType = "vhd"
+            $kickstartLocation = "hd:sdb1:/ks.cfg"
+        }
 
-    # Create VM
-    Write-Host "  Creating VHD: $vhdFile"
-    New-VHD -Path $vhdFile -SizeBytes ($vmVHDSizeGB * 1GB) -Dynamic | Out-Null
-    
-    Write-Host "  Creating VM with $($vmMemory / 1GB) GB RAM"
-    New-VM -Name $vmName -MemoryStartupBytes $vmMemory -Generation $vmGeneration `
-           -SwitchName $vmSwitchName -Path $vmPath | Out-Null
-    
-    # Attach storage
-    Add-VMHardDiskDrive -VMName $vmName -Path $vhdFile
-    
-    # Configure VM settings
-    Set-VMFirmware -VMName $vmName -EnableSecureBoot Off
-    Set-VMProcessor -VMName $vmName -ExposeVirtualizationExtensions $true
-    
-    # Mount AlmaLinux ISO
-    Write-Host "  Attaching AlmaLinux ISO"
-    Add-VMDvdDrive -VMName $vmName -Path $isoPath
-    
-    # Attach kickstart floppy
-    Write-Host "  Attaching kickstart floppy"
-    Add-VMFloppyDiskDrive -VMName $vmName -Path $floppyFile
-    
-    # Configure boot order and parameters
-    if ($vmGeneration -eq 2) {
-        # For Generation 2 VMs, configure boot from DVD
-        $dvdDrive = Get-VMDvdDrive -VMName $vmName
-        Set-VMFirmware -VMName $vmName -FirstBootDevice $dvdDrive
+        # Create VM
+        Write-Host "  Creating VHD: $vhdFile"
+        New-VHD -Path $vhdFile -SizeBytes ($vmVHDSizeGB * 1GB) -Dynamic -ErrorAction Stop | Out-Null
         
-        # Add automatic console configuration for headless installation
-        Add-VMKeyValuePair -VMName $vmName -Name "KickstartParameters" -Value "inst.ks=hd:fd0:/ks.cfg inst.text inst.headless console=ttyS0,115200"
+        Write-Host "  Creating VM with $($vmMemory / 1GB) GB RAM"
+        New-VM -Name $vmName -MemoryStartupBytes $vmMemory -Generation $vmGeneration `
+               -SwitchName $vmSwitchName -Path $vmPath -ErrorAction Stop | Out-Null
         
-        Write-Host "  Configured Gen 2 VM with kickstart boot parameters"
-        Write-Host "  Boot parameters: inst.ks=hd:fd0:/ks.cfg inst.text inst.headless console=ttyS0,115200"
-        Write-Host "  Note: The installer will use these parameters automatically for kickstart"
-    } else {
-        # For Generation 1 VMs, set boot order
-        Set-VMBios -VMName $vmName -StartupOrder @("CD", "Floppy", "IDE")
-        Write-Host "  Configured Gen 1 VM boot order: CD, Floppy, IDE"
+        # Attach storage
+        Add-VMHardDiskDrive -VMName $vmName -Path $vhdFile -ErrorAction Stop
+        
+        # Configure VM settings
+        if ($vmGeneration -eq 2) {
+            Set-VMFirmware -VMName $vmName -EnableSecureBoot Off -ErrorAction Stop
+        }
+        Set-VMProcessor -VMName $vmName -ExposeVirtualizationExtensions $true -ErrorAction Stop
+        
+        # Mount AlmaLinux ISO
+        Write-Host "  Attaching AlmaLinux ISO"
+        Add-VMDvdDrive -VMName $vmName -Path $isoPath -ErrorAction Stop
+        
+        # Attach kickstart media based on generation
+        if ($vmGeneration -eq 1) {
+            Write-Host "  Attaching kickstart floppy"
+            Add-VMFloppyDiskDrive -VMName $vmName -Path $kickstartMedia -ErrorAction Stop
+        } else {
+            Write-Host "  Attaching kickstart VHD as secondary disk"
+            Add-VMHardDiskDrive -VMName $vmName -Path $kickstartMedia -ErrorAction Stop
+        }
+        
+        # Configure boot order and parameters
+        if ($vmGeneration -eq 2) {
+            # For Generation 2 VMs, configure boot from DVD
+            $dvdDrive = Get-VMDvdDrive -VMName $vmName
+            Set-VMFirmware -VMName $vmName -FirstBootDevice $dvdDrive -ErrorAction Stop
+            
+            Write-Host "  Configured Gen 2 VM to boot from DVD"
+            Write-Host "  Kickstart location: $kickstartLocation"
+            Write-Host "  Note: You may need to manually specify kickstart location during boot"
+            Write-Host "  Boot parameters: inst.ks=$kickstartLocation inst.text console=ttyS0,115200"
+        } else {
+            # For Generation 1 VMs, set boot order
+            Set-VMBios -VMName $vmName -StartupOrder @("CD", "Floppy", "IDE") -ErrorAction Stop
+            Write-Host "  Configured Gen 1 VM boot order: CD, Floppy, IDE"
+            Write-Host "  Kickstart will be loaded from floppy automatically"
+        }
+        
+        Write-Host "  Starting VM for automated installation"
+        Start-VM -Name $vmName -ErrorAction Stop
+        
+        Write-Host "  VM $vmName created and started successfully`n"
     }
-    
-    Write-Host "  Starting VM for automated installation"
-    Start-VM -Name $vmName
-    
-    Write-Host "  VM $vmName created and started`n"
+    catch {
+        Write-Error "Failed to create VM $vmName : $($_.Exception.Message)"
+        
+        # Cleanup on failure
+        try {
+            if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) {
+                Stop-VM -Name $vmName -Force -ErrorAction SilentlyContinue
+                Remove-VM -Name $vmName -Force -ErrorAction SilentlyContinue
+            }
+            if (Test-Path $vhdFile) {
+                Remove-Item $vhdFile -Force -ErrorAction SilentlyContinue
+            }
+            if (Test-Path $kickstartMedia) {
+                Remove-Item $kickstartMedia -Force -ErrorAction SilentlyContinue
+            }
+        } catch {
+            Write-Warning "Failed to cleanup resources for $vmName : $($_.Exception.Message)"
+        }
+        
+        continue
+    }
 }
 
 Write-Host "`n=== VM Provisioning Summary ==="

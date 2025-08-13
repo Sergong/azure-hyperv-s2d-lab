@@ -43,7 +43,8 @@ graph TD
 4. **Post-deployment**
    - Log into each VM
    - Verify Hyper-V and Failover Clustering are installed
-   - Run `bootstrap.ps1` to configure S2D and create the cluster
+   - Run `setup-s2d-cluster.ps1` on hyperv-node-0 to create the cluster and virtual switch
+   - **OR** run `setup-virtual-switch.ps1` on both nodes if you only need the virtual switch
 
 ---
 
@@ -59,9 +60,42 @@ graph TD
 ### ⚠️ Gotchas
 
 - Requires **Windows Server Datacenter edition**
-- Azure VMs don’t support true shared storage — S2D simulates it
+- Azure VMs don't support true shared storage — S2D simulates it
 - Performance is limited — use for **lab/testing only**
 - Ensure VM size supports nested virtualization (e.g., `Standard_D4s_v3`)
+
+### 🔧 Virtual Switch Setup
+
+The nested AlmaLinux VMs require a virtual switch called `InternalLabSwitch`. This is now automatically created by the `setup-s2d-cluster.ps1` script, but you can also create it manually:
+
+**Option 1: Automatic (Recommended)**
+```powershell
+# Run on hyperv-node-0 (creates cluster AND virtual switch)
+.\setup-s2d-cluster.ps1
+```
+
+**Option 2: Virtual Switch Only**
+```powershell
+# Run on both nodes if you only need the virtual switch
+.\setup-virtual-switch.ps1
+```
+
+**Option 3: Manual Setup**
+```powershell
+# Create internal switch manually
+New-VMSwitch -Name "InternalLabSwitch" -SwitchType Internal
+
+# Configure host IP
+New-NetIPAddress -InterfaceAlias "vEthernet (InternalLabSwitch)" -IPAddress "192.168.100.1" -PrefixLength 24
+
+# Optional: Enable NAT for internet access
+New-NetNat -Name "InternalLabNAT" -InternalIPInterfaceAddressPrefix "192.168.100.0/24"
+```
+
+**Network Configuration:**
+- Host IP: `192.168.100.1/24`
+- VM IP Range: `192.168.100.2` - `192.168.100.254`
+- NAT Gateway: `192.168.100.1` (for internet access)
 
 ---
 

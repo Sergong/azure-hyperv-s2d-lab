@@ -46,7 +46,62 @@ foreach ($feature in $requiredFeatures) {
         Stop-Transcript
         exit 1
     }
-    Write-Host "✓ Feature '$feature' is installed"
+Write-Host "✓ Feature '$feature' is installed"
+}
+
+# Step 1.5: Create virtual switch for nested VMs (if it doesn't exist)
+Write-Host "`nStep 1.5: Setting up virtual switch for nested VMs..."
+try {
+    $switchName = "InternalLabSwitch"
+    $existingSwitch = Get-VMSwitch -Name $switchName -ErrorAction SilentlyContinue
+    
+    if ($existingSwitch) {
+        Write-Host "✓ Virtual switch '$switchName' already exists"
+        Write-Host "  Switch Type: $($existingSwitch.SwitchType)"
+        if ($existingSwitch.NetAdapterInterfaceDescription) {
+            Write-Host "  Network Adapter: $($existingSwitch.NetAdapterInterfaceDescription)"
+        }
+    } else {
+        Write-Host "Creating internal virtual switch '$switchName'..."
+        
+        # Create an internal switch for nested VMs
+        # Internal switch allows communication between host and VMs, and between VMs
+        New-VMSwitch -Name $switchName -SwitchType Internal | Out-Null
+        
+        # Configure IP address for the switch
+        Write-Host "Configuring IP address for virtual switch..."
+        $adapter = Get-NetAdapter -Name "vEthernet ($switchName)"
+        
+        # Remove any existing IP configuration
+        Remove-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
+        Remove-NetRoute -InterfaceIndex $adapter.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
+        
+        # Set static IP for the host side of the switch
+        New-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -IPAddress "192.168.100.1" -PrefixLength 24 -ErrorAction Stop
+        
+        Write-Host "✓ Virtual switch '$switchName' created successfully"
+        Write-Host "  Host IP: 192.168.100.1/24"
+        Write-Host "  Nested VMs can use DHCP or static IPs in 192.168.100.0/24 range"
+        
+        # Optional: Enable NAT for internet access (requires careful consideration in cluster environment)
+        try {
+            $natName = "InternalLabNAT"
+            $existingNAT = Get-NetNat -Name $natName -ErrorAction SilentlyContinue
+            if (-not $existingNAT) {
+                Write-Host "Creating NAT configuration for internet access..."
+                New-NetNat -Name $natName -InternalIPInterfaceAddressPrefix "192.168.100.0/24" | Out-Null
+                Write-Host "✓ NAT configuration created - nested VMs will have internet access"
+            }
+        } catch {
+            Write-Warning "Could not create NAT configuration: $($_.Exception.Message)"
+            Write-Host "Nested VMs may not have internet access (manual NAT configuration required)"
+        }
+    }
+} catch {
+    Write-Warning "Failed to create virtual switch: $($_.Exception.Message)"
+    Write-Host "You may need to create the virtual switch manually:"
+    Write-Host "  New-VMSwitch -Name 'InternalLabSwitch' -SwitchType Internal"
+    Write-Host "  New-NetIPAddress -InterfaceAlias 'vEthernet (InternalLabSwitch)' -IPAddress '192.168.100.1' -PrefixLength 24"
 }
 
 # Step 2: Test node connectivity
