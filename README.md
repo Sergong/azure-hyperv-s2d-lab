@@ -211,24 +211,18 @@ This is a reusable, versioned repo to automate nested AlmaLinux provisioning ins
 ```plaintext
 NestedAlmaLab/
 ├── README.md
-├── config/
-│   ├── alma-ks-v1.cfg
-│   ├── alma-ks-v2.cfg
-│   └── config.yaml                  # Global config (VM count, memory, etc.)
 ├── scripts/
+│   ├── config.yaml                  # Global config (VM count, memory, etc.)
 │   ├── fetch_iso.ps1               # Downloads AlmaLinux ISO
 │   ├── provision-vms.ps1           # Core provisioning logic
 │   ├── postinstall.ps1             # Optional: inject bootstrap scripts post-install
-├── templates/
-│   └── AlmaLinux/
-│       └── v1/
-│           └── ks.cfg              # Kickstart for v1
-│       └── v2/
-│           └── ks.cfg              # Kickstart for v2
-├── assets/
-│   └── AlmaLinux-latest-x86_64.iso
-└── logs/
-    └── install-log.txt
+│   └── postinstall.sh              # Optional: Run configuration inside the Alma VM
+└── templates/
+    └── AlmaLinux/
+        └── v1/
+            └── ks.cfg              # Kickstart for v1
+        └── v2/
+            └── ks.cfg              # Kickstart for v2
 ```
 
 ---
@@ -309,5 +303,57 @@ while (-not (Test-NetConnection $vmIp -Port 22).TcpTestSucceeded) {
 scp .\scripts\postinstall.sh root@$vmIp:/root/
 ssh root@$vmIp "bash /root/postinstall.sh"
 ```
+
+---
+
+## ⚠️ Known Issues and Solutions
+
+### Kickstart Boot Parameters Issue
+
+**Problem**: The `provision-vms.ps1` script correctly creates VMs and attaches kickstart media, but doesn't automatically pass kernel boot parameters (`inst.ks=...`) to instruct AlmaLinux installer to use the kickstart file.
+
+**Impact**: 
+- VMs boot to AlmaLinux installer menu but require manual intervention
+- User must press TAB (or 'e' to edit) and add kickstart parameters manually
+- This affects both Generation 1 and Generation 2 VMs
+
+**Solutions**:
+
+#### Option 1: Custom ISO with Embedded Kickstart (🔥 Recommended)
+Create a custom AlmaLinux ISO with kickstart parameters pre-configured for fully automated installation:
+
+```powershell
+# Navigate to the scripts directory
+cd NestedAlmaLab\scripts
+
+# Create custom ISO for your VM generation and kickstart version
+.\create-custom-iso.ps1 -KickstartVersion v1 -Generation 2
+
+# Update config.yaml to use the custom ISO
+# iso_path: "C:\path\to\NestedAlmaLab\custom-iso\AlmaLinux-v1-Gen2-Custom.iso"
+
+# Run normal VM provisioning - now fully automated!
+.\provision-vms.ps1
+```
+
+**Requirements for Custom ISO**:
+- Windows ADK (Assessment and Deployment Kit) - **automatically installed by the script if missing**
+- Administrator privileges (required for automatic ADK installation)
+- Script will prompt for permission before installing ADK
+- Creates ISOs with embedded kickstart parameters for both BIOS and UEFI boot
+- Manual ADK installation: https://docs.microsoft.com/en-us/windows-hardware/get-started/adk-install
+
+#### Option 2: Manual Boot Parameters (Current Method)
+When VMs boot for the first time:
+
+**For Generation 1 VMs**:
+- Press TAB at the boot menu
+- Add: `inst.ks=hd:fd0:/ks.cfg inst.text console=tty0 console=ttyS0,115200`
+- Press Enter
+
+**For Generation 2 VMs**:
+- Press TAB at the boot menu (or 'e' to edit)
+- Add: `inst.ks=hd:sdb1:/ks.cfg inst.text console=tty0 console=ttyS0,115200`
+- Press Ctrl+X (if using 'e' to edit) or Enter
 
 

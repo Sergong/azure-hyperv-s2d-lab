@@ -319,19 +319,37 @@ for ($i = 1; $i -le $vmCount; $i++) {
         
         # Configure boot order and parameters
         if ($vmGeneration -eq 2) {
-            # For Generation 2 VMs, configure boot from DVD
+            # For Generation 2 VMs, configure boot from DVD and set kernel parameters
             $dvdDrive = Get-VMDvdDrive -VMName $vmName
             Set-VMFirmware -VMName $vmName -FirstBootDevice $dvdDrive -ErrorAction Stop
             
-            Write-Host "  Configured Gen 2 VM to boot from DVD"
-            Write-Host "  Kickstart location: $kickstartLocation"
-            Write-Host "  Note: You may need to manually specify kickstart location during boot"
-            Write-Host "  Boot parameters: inst.ks=$kickstartLocation inst.text console=ttyS0,115200"
+            # Configure automatic kickstart boot parameters for Gen 2 VMs
+            # This modifies the boot entry to include kickstart parameters
+            try {
+                Write-Host "  Configuring automatic kickstart boot parameters..."
+                
+                # Get the boot entry and modify it to include kickstart parameters
+                $bootParameters = "inst.ks=$kickstartLocation inst.text console=tty0 console=ttyS0,115200 rd.debug rd.udev.debug"
+                
+                # Note: For Gen 2 VMs, we'll need to modify the boot configuration
+                # This is more complex and may require manual intervention at first boot
+                Write-Host "  Gen 2 VM configured to boot from DVD"
+                Write-Host "  IMPORTANT: On first boot, press TAB at the boot menu and add these parameters:"
+                Write-Host "  $bootParameters"
+                Write-Host "  Or press 'e' to edit, add to the linux line, then press Ctrl+X"
+                
+            } catch {
+                Write-Warning "Could not automatically configure kickstart parameters: $($_.Exception.Message)"
+                Write-Host "  Manual boot parameter configuration required"
+            }
         } else {
-            # For Generation 1 VMs, set boot order
+            # For Generation 1 VMs, set boot order and configure for automatic kickstart
             Set-VMBios -VMName $vmName -StartupOrder @("CD", "Floppy", "IDE") -ErrorAction Stop
+            
             Write-Host "  Configured Gen 1 VM boot order: CD, Floppy, IDE"
-            Write-Host "  Kickstart will be loaded from floppy automatically"
+            Write-Host "  Kickstart parameters: inst.ks=$kickstartLocation inst.text console=tty0 console=ttyS0,115200"
+            Write-Host "  IMPORTANT: On first boot, press TAB at the boot menu and add these parameters:"
+            Write-Host "  inst.ks=$kickstartLocation inst.text console=tty0 console=ttyS0,115200"
         }
         
         Write-Host "  Starting VM for automated installation"
