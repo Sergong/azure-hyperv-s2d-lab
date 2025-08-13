@@ -1,3 +1,6 @@
+# Alternative version using for_each instead of count for better race condition prevention
+# This approach provides more explicit resource naming and dependency management
+
 terraform {
   required_providers {
     azurerm = {
@@ -15,8 +18,22 @@ provider "azurerm" {
   features {}
 }
 
+# Define the nodes as a map instead of using count
+locals {
+  vm_nodes = {
+    "hyperv-node-0" = {
+      vm_index = 0
+      is_primary = true
+      disk_indices = [0, 1]
+    }
+    "hyperv-node-1" = {
+      vm_index = 1  
+      is_primary = false
+      disk_indices = [2, 3]
+    }
+  }
+}
 
-// Ensure you export TF_VAR_admin_password before running this!
 variable "admin_password" {
   description = "Admin password for Windows VM"
   type        = string
@@ -26,16 +43,15 @@ variable "admin_password" {
 variable "admin_username" {
   description = "Admin username for the Windows VM"
   type        = string
-  default     = "adm-smeeuwsen"  # Optional: set a default or omit this if it must be provided explicitly
+  default     = "adm-smeeuwsen"
 }
-
-
 
 resource "azurerm_resource_group" "lab" {
   name     = "hyperv-nested-rg"
   location = "UK South"
 }
 
+# Network infrastructure (same as before)
 resource "azurerm_virtual_network" "vnet" {
   name                = "hyperv-vnet"
   address_space       = ["10.0.0.0/16"]
@@ -50,10 +66,6 @@ resource "azurerm_subnet" "subnet" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
-# Note: Azure Bastion Developer SKU doesn't require dedicated subnet or public IP
-# It uses a shared pool and is created on-demand from the VM Connect experience
-
-# Network Security Group for Hyper-V hosts (no direct internet access)
 resource "azurerm_network_security_group" "vm_nsg" {
   name                = "hyperv-nsg"
   location            = azurerm_resource_group.lab.location
@@ -67,7 +79,7 @@ resource "azurerm_network_security_group" "vm_nsg" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "3389"
-    source_address_prefix      = "AzureCloud"  # Allow from Azure Bastion service
+    source_address_prefix      = "AzureCloud"
     destination_address_prefix = "*"
   }
 
@@ -79,54 +91,38 @@ resource "azurerm_network_security_group" "vm_nsg" {
     protocol                   = "*"
     source_port_range          = "*"
     destination_port_range     = "*"
-    source_address_prefix      = "10.0.1.0/24"  # Allow internal subnet communication
+    source_address_prefix      = "10.0.1.0/24"
     destination_address_prefix = "*"
   }
 }
 
-# Associate NSG with subnet
 resource "azurerm_subnet_network_security_group_association" "nsg_association" {
   subnet_id                 = azurerm_subnet.subnet.id
   network_security_group_id = azurerm_network_security_group.vm_nsg.id
 }
 
-# Storage account for hosting scripts
-resource "azurerm_storage_account" "scripts" {
-  name                     = "hypervscripts${random_string.storage_suffix.result}"
-  resource_group_name      = azurerm_resource_group.lab.name
-  location                 = azurerm_resource_group.lab.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-  
-  # Allow blob anonymous access for VM extensions to download scripts
-  allow_nested_items_to_be_public = true
-}
-
-# Random suffix for unique storage account name
+# Storage for scripts
 resource "random_string" "storage_suffix" {
   length  = 8
   special = false
   upper   = false
 }
 
-# Container for scripts
+resource "azurerm_storage_account" "scripts" {
+  name                     = "hypervscripts${random_string.storage_suffix.result}"
+  resource_group_name      = azurerm_resource_group.lab.name
+  location                 = azurerm_resource_group.lab.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  allow_nested_items_to_be_public = true
+}
+
 resource "azurerm_storage_container" "scripts" {
   name                  = "scripts"
   storage_account_name  = azurerm_storage_account.scripts.name
-  container_access_type = "blob"  # Allow anonymous blob access
+  container_access_type = "blob"
 }
 
-# Upload the S2D setup script
-resource "azurerm_storage_blob" "s2d_script" {
-  name                   = "setup-s2d-cluster.ps1"
-  storage_account_name   = azurerm_storage_account.scripts.name
-  storage_container_name = azurerm_storage_container.scripts.name
-  type                   = "Block"
-  source                 = "setup-s2d-cluster.ps1"
-  content_type          = "text/plain"
-}
-
-# Upload the bootstrap script
 resource "azurerm_storage_blob" "bootstrap_script" {
   name                   = "bootstrap.ps1"
   storage_account_name   = azurerm_storage_account.scripts.name
@@ -136,9 +132,23 @@ resource "azurerm_storage_blob" "bootstrap_script" {
   content_type          = "text/plain"
 }
 
+resource "azurerm_storage_blob" "s2d_script" {
+  name                   = "setup-s2d-cluster.ps1"
+  storage_account_name   = azurerm_storage_account.scripts.name
+  storage_container_name = azurerm_storage_container.scripts.name
+  type                   = "Block"
+  source                 = "setup-s2d-cluster.ps1"
+  content_type          = "text/plain"
+}
+
+##############################################################################
+# VMs and NICs using for_each for better resource management
+##############################################################################
+
+# Network interfaces using for_each
 resource "azurerm_network_interface" "nic" {
-  count               = 2
-  name                = "hyperv-nic-${count.index}"
+  for_each            = local.vm_nodes
+  name                = "${each.key}-nic"
   location            = azurerm_resource_group.lab.location
   resource_group_name = azurerm_resource_group.lab.name
   
@@ -146,29 +156,25 @@ resource "azurerm_network_interface" "nic" {
     name                          = "ipconfig"
     subnet_id                     = azurerm_subnet.subnet.id
     private_ip_address_allocation = "Dynamic"
-    # No public IP - access via Bastion host only
   }
 }
 
-# Note: Azure Bastion Developer SKU is created on-demand from VM Connect experience
-# No explicit resource definition needed - it's provisioned automatically when you
-# connect to a VM through the Azure Portal using the Bastion option
-
+# Virtual machines using for_each
 resource "azurerm_windows_virtual_machine" "hyperv_node" {
-  count               = 2
-  name                = "hyperv-node-${count.index}"
+  for_each            = local.vm_nodes
+  name                = each.key
   location            = azurerm_resource_group.lab.location
   resource_group_name = azurerm_resource_group.lab.name
   size                = "Standard_D4s_v3"
   admin_username      = var.admin_username
   admin_password      = var.admin_password
 
-  network_interface_ids = [azurerm_network_interface.nic[count.index].id]
+  network_interface_ids = [azurerm_network_interface.nic[each.key].id]
   enable_automatic_updates = true
 
   os_disk {
-    name              = "hyperv-osdisk-${count.index}"
-    caching           = "ReadWrite"
+    name                 = "${each.key}-osdisk"
+    caching              = "ReadWrite"
     storage_account_type = "Premium_LRS"
   }
 
@@ -194,66 +200,40 @@ resource "azurerm_windows_virtual_machine" "hyperv_node" {
 </AutoLogon>
 CONTENT
   }
-
-  # Custom data replaced with VM extension - see azurerm_virtual_machine_extension below
 }
 
-# Managed disks for S2D storage (2 disks per VM for demonstration)
+##############################################################################
+# Storage disks with explicit naming
+##############################################################################
+
 resource "azurerm_managed_disk" "s2d_disk" {
-  count                = 4  # 2 disks per VM (2 VMs = 4 total disks)
+  count                = 4
   name                 = "s2d-disk-${count.index}"
   location             = azurerm_resource_group.lab.location
   resource_group_name  = azurerm_resource_group.lab.name
   storage_account_type = "Premium_LRS"
   create_option        = "Empty"
-  disk_size_gb         = 128  # 128 GB per disk
+  disk_size_gb         = 128
 }
 
-# Attach disks to VMs (2 disks per VM)
+# Disk attachments with explicit VM targeting
 resource "azurerm_virtual_machine_data_disk_attachment" "s2d_disk_attachment" {
   count              = 4
   managed_disk_id    = azurerm_managed_disk.s2d_disk[count.index].id
-  virtual_machine_id = azurerm_windows_virtual_machine.hyperv_node[count.index < 2 ? 0 : 1].id
+  virtual_machine_id = count.index < 2 ? azurerm_windows_virtual_machine.hyperv_node["hyperv-node-0"].id : azurerm_windows_virtual_machine.hyperv_node["hyperv-node-1"].id
   lun                = count.index < 2 ? count.index : count.index - 2
   caching            = "ReadWrite"
 }
 
 ##############################################################################
-# VM EXTENSIONS - RACE CONDITION PREVENTION STRATEGIES
+# VM EXTENSIONS - RACE CONDITION PREVENTION WITH for_each
 ##############################################################################
-# 
-# This section implements multiple strategies to prevent Azure API race conditions:
-# 
-# 1. SEQUENTIAL EXECUTION: 
-#    - Split VM extensions into separate resources instead of using count
-#    - Node 1 explicitly depends on Node 0 completion via depends_on
-#    - Ensures extensions are installed one at a time, not simultaneously
-# 
-# 2. PROPER DEPENDENCY CHAINS:
-#    - All disk attachments must complete before extensions start
-#    - Storage blobs must be uploaded before extensions can download them
-#    - VMs must be fully provisioned before extensions are applied
-# 
-# 3. RESOURCE NAMING:
-#    - Use descriptive names (bootstrap_node_0, bootstrap_node_1) instead of array indices
-#    - Easier to target specific resources for troubleshooting
-# 
-# 4. EXPLICIT TIMEOUTS (can be added if needed):
-#    - timeouts { create = "30m" } for long-running operations
-# 
-# 5. ALTERNATIVE APPROACHES (choose one):
-#    - Option A: Sequential (current implementation)
-#    - Option B: Use for_each with explicit keys instead of count
-#    - Option C: Add random delays between extensions
-##############################################################################
+# Using for_each with explicit dependency chaining between nodes
 
-# VM Custom Script Extension for bootstrap configuration
-# Split into separate resources to prevent race conditions
-
-# Node 0 extension - primary node
-resource "azurerm_virtual_machine_extension" "bootstrap_node_0" {
+# Primary node extension
+resource "azurerm_virtual_machine_extension" "bootstrap_primary" {
   name                 = "bootstrap-extension"
-  virtual_machine_id   = azurerm_windows_virtual_machine.hyperv_node[0].id
+  virtual_machine_id   = azurerm_windows_virtual_machine.hyperv_node["hyperv-node-0"].id
   publisher            = "Microsoft.Compute"
   type                 = "CustomScriptExtension"
   type_handler_version = "1.10"
@@ -263,19 +243,22 @@ resource "azurerm_virtual_machine_extension" "bootstrap_node_0" {
     commandToExecute = "powershell -ExecutionPolicy Bypass -File bootstrap.ps1 -NodeName hyperv-node-0 -S2DScriptUrl '${azurerm_storage_blob.s2d_script.url}'"
   })
   
-  # Make sure all disks are attached before installing extensions
+  # Explicit timeouts for long-running operations
+  timeouts {
+    create = "30m"
+  }
+  
   depends_on = [
-    azurerm_windows_virtual_machine.hyperv_node,
     azurerm_virtual_machine_data_disk_attachment.s2d_disk_attachment,
     azurerm_storage_blob.bootstrap_script,
     azurerm_storage_blob.s2d_script
   ]
 }
 
-# Node 1 extension - secondary node (depends explicitly on node 0)
-resource "azurerm_virtual_machine_extension" "bootstrap_node_1" {
+# Secondary node extension (waits for primary)
+resource "azurerm_virtual_machine_extension" "bootstrap_secondary" {
   name                 = "bootstrap-extension"
-  virtual_machine_id   = azurerm_windows_virtual_machine.hyperv_node[1].id
+  virtual_machine_id   = azurerm_windows_virtual_machine.hyperv_node["hyperv-node-1"].id
   publisher            = "Microsoft.Compute"
   type                 = "CustomScriptExtension"
   type_handler_version = "1.10"
@@ -285,19 +268,24 @@ resource "azurerm_virtual_machine_extension" "bootstrap_node_1" {
     commandToExecute = "powershell -ExecutionPolicy Bypass -File bootstrap.ps1 -NodeName hyperv-node-1"
   })
   
-  # This extension explicitly waits for the first node's extension to complete
-  # This ensures sequential execution and prevents race conditions
+  timeouts {
+    create = "30m"
+  }
+  
+  # This creates a strict dependency chain: secondary waits for primary completion
   depends_on = [
-    azurerm_virtual_machine_extension.bootstrap_node_0,
-    azurerm_virtual_machine_data_disk_attachment.s2d_disk_attachment
+    azurerm_virtual_machine_extension.bootstrap_primary
   ]
 }
 
-# Outputs for easy access to connection information
+##############################################################################
+# OUTPUTS
+##############################################################################
+
 output "vm_private_ips" {
   description = "Private IP addresses of the VMs"
   value = {
-    for i in range(2) : "hyperv-node-${i}" => azurerm_network_interface.nic[i].private_ip_address
+    for vm_name, nic in azurerm_network_interface.nic : vm_name => nic.private_ip_address
   }
 }
 
@@ -315,36 +303,4 @@ output "script_urls" {
     bootstrap_script = azurerm_storage_blob.bootstrap_script.url
     s2d_script = azurerm_storage_blob.s2d_script.url
   }
-}
-
-output "connection_instructions" {
-  description = "Instructions for connecting to VMs via Bastion"
-  value = <<-EOT
-    To connect to your VMs using Azure Bastion Developer SKU (FREE):
-    1. Go to Azure Portal
-    2. Navigate to your VM (hyperv-node-0 or hyperv-node-1)
-    3. Click 'Connect' -> 'Bastion'
-    4. The Developer SKU Bastion will be created automatically (first time may take a few minutes)
-    5. Enter credentials: ${var.admin_username} / [your password]
-    
-    Note: VMs are automatically configured with:
-    - Hyper-V, Failover Clustering, File Server roles
-    - Bootstrap scripts downloaded from Azure Storage
-    - Node readiness markers (C:\NodeReady.txt)
-    - S2D setup script downloaded to hyperv-node-0 (C:\setup-s2d-cluster.ps1)
-    - Additional storage: 2x 128GB Premium SSD disks per VM for S2D
-    
-    Check bootstrap logs:
-    - C:\bootstrap-extension.txt (initial setup)
-    
-    To setup S2D cluster (after both nodes are ready):
-    1. Connect to hyperv-node-0 via Bastion
-    2. Run: PowerShell -ExecutionPolicy Bypass -File C:\setup-s2d-cluster.ps1
-    
-    Developer SKU limitations:
-    - Only 1 concurrent connection
-    - No SLA or high availability
-    - Perfect for dev/test scenarios
-    - Completely FREE to use
-  EOT
 }
