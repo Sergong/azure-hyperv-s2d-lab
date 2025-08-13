@@ -1,7 +1,9 @@
 # AlmaLinux VM Provisioning Script with Kickstart Automation
 # 
 # FIXES APPLIED:
-# 1. Fixed VHD minimum size issue - changed floppy size from 1.44MB to 3MB (Hyper-V minimum)
+# 1. Fixed VHD minimum size issues:
+#    - Changed floppy size from 1.44MB to 3MB (Hyper-V minimum)
+#    - Changed kickstart VHD size from 10MB to 100MB (Azure/Hyper-V minimum)
 # 2. Fixed Generation 2 VM compatibility - Gen 2 VMs don't support floppy drives
 #    - Gen 1 VMs: Use floppy disk for kickstart (hd:fd0:/ks.cfg)
 #    - Gen 2 VMs: Use secondary VHD for kickstart (hd:sdb1:/ks.cfg)
@@ -206,8 +208,9 @@ function New-KickstartVHD {
     Write-Host "Creating kickstart VHD: $VHDPath"
     
     try {
-        # Create a small VHD (10MB should be sufficient)
-        $vhdSize = 10MB
+        # Create a VHD with minimum supported size (Hyper-V requires larger than 10MB)
+        # Using 100MB to ensure compatibility with all Hyper-V environments
+        $vhdSize = 100MB
         $vhd = New-VHD -Path $VHDPath -SizeBytes $vhdSize -Fixed -ErrorAction Stop
         
         # Mount the VHD to copy the kickstart file
