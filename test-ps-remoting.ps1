@@ -25,13 +25,13 @@ function Test-WinRMConnectivity {
     try {
         $result = Test-WSMan -ComputerName $ComputerName -ErrorAction Stop
         if ($result) {
-            Write-Host "✓ WinRM connectivity to $ComputerName: SUCCESS"
+            Write-Host "✓ WinRM connectivity to ${ComputerName}: SUCCESS"
             Write-Host "  ProductVendor: $($result.ProductVendor)"
             Write-Host "  ProductVersion: $($result.ProductVersion)"
             return $true
         }
     } catch {
-        Write-Host "✗ WinRM connectivity to $ComputerName: FAILED"
+        Write-Host "✗ WinRM connectivity to ${ComputerName}: FAILED"
         Write-Host "  Error: $($_.Exception.Message)"
         return $false
     }
@@ -66,7 +66,7 @@ function Test-PSRemoting {
         } -ErrorAction Stop
         
         if ($result) {
-            Write-Host "✓ PowerShell Remoting to $ComputerName: SUCCESS"
+            Write-Host "✓ PowerShell Remoting to ${ComputerName}: SUCCESS"
             Write-Host "  Remote Computer: $($result.ComputerName)"
             Write-Host "  Remote User: $($result.Domain)\$($result.UserName)"
             Write-Host "  Remote OS: $($result.OSVersion)"
@@ -75,7 +75,7 @@ function Test-PSRemoting {
             return $true
         }
     } catch {
-        Write-Host "✗ PowerShell Remoting to $ComputerName: FAILED"
+        Write-Host "✗ PowerShell Remoting to ${ComputerName}: FAILED"
         Write-Host "  Error: $($_.Exception.Message)"
         
         # Provide troubleshooting guidance
