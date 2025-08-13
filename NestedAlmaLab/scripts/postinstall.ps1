@@ -8,5 +8,5 @@ while (-not (Test-NetConnection $vmIp -Port 22).TcpTestSucceeded) {
 }
 
 # Copy postinstall.sh or run remote scripts
-scp .\scripts\postinstall.sh root@$vmIp:/root/
+scp .\scripts\postinstall.sh root@${vmIp}:/root/
 ssh root@$vmIp "bash /root/postinstall.sh"
