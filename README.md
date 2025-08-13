@@ -43,6 +43,7 @@ graph TD
 4. **Post-deployment**
    - Log into each VM
    - Verify Hyper-V and Failover Clustering are installed
+   - **WinRM is automatically configured by bootstrap.ps1 for workgroup PowerShell remoting**
    - Run `setup-s2d-cluster.ps1` on hyperv-node-0 to create the cluster and virtual switch
    - **OR** run `setup-virtual-switch.ps1` on both nodes if you only need the virtual switch
 
@@ -96,6 +97,40 @@ New-NetNat -Name "InternalLabNAT" -InternalIPInterfaceAddressPrefix "192.168.100
 - Host IP: `192.168.100.1/24`
 - VM IP Range: `192.168.100.2` - `192.168.100.254`
 - NAT Gateway: `192.168.100.1` (for internet access)
+
+### 🔗 PowerShell Remoting & WinRM Configuration
+
+For failover clustering to work in a workgroup environment, PowerShell remoting must be properly configured between nodes. This is automatically handled by the `bootstrap.ps1` script.
+
+**What's Configured Automatically:**
+- WinRM service enabled and started
+- Basic authentication enabled (required for workgroup)
+- Trusted hosts configured for both nodes
+- Firewall rules created for WinRM ports (5985, 5986)
+- Registry settings for workgroup remoting
+- Network profiles set to Private
+
+**Manual Configuration (if needed):**
+```powershell
+# Run on both nodes
+.\configure-winrm-workgroup.ps1
+```
+
+**Test PowerShell Remoting:**
+```powershell
+# Test connectivity between nodes
+.\test-ps-remoting.ps1
+
+# Manual tests
+Test-WSMan hyperv-node-0
+Test-WSMan hyperv-node-1
+Invoke-Command -ComputerName hyperv-node-1 -ScriptBlock { Get-ComputerInfo } -Credential (Get-Credential)
+```
+
+**Credentials for Clustering:**
+- Use: `.\Administrator` or `COMPUTERNAME\Administrator`
+- Both nodes should have the same local Administrator password
+- Domain credentials are not required in workgroup mode
 
 ---
 

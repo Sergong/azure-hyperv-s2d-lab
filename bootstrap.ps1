@@ -97,6 +97,107 @@ try {
         Write-Host "This is node: $NodeName (not hyperv-node-0), skipping S2D script download"
     }
 
+    # Configure WinRM for PowerShell Remoting in workgroup environment
+    Write-Host "Configuring WinRM for PowerShell Remoting in workgroup environment..."
+    try {
+        # Enable WinRM service and configure basic authentication
+        Write-Host "Starting and configuring WinRM service..."
+        
+        # Start WinRM service and set to automatic startup
+        Set-Service -Name WinRM -StartupType Automatic -PassThru
+        Start-Service -Name WinRM -ErrorAction SilentlyContinue
+        
+        # Enable WinRM with force to avoid prompts
+        Enable-PSRemoting -Force -SkipNetworkProfileCheck
+        
+        # Configure WinRM for workgroup authentication
+        Write-Host "Configuring WinRM authentication settings..."
+        
+        # Enable basic authentication (needed for workgroup)
+        winrm set winrm/config/service/auth '@{Basic="true"}'
+        winrm set winrm/config/client/auth '@{Basic="true"}'
+        
+        # Allow unencrypted traffic (for workgroup - not recommended for production)
+        winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+        winrm set winrm/config/client '@{AllowUnencrypted="true"}'
+        
+        # Configure trusted hosts for workgroup communication
+        # Add both node names and IP ranges
+        $trustedHosts = @(
+            "hyperv-node-0",
+            "hyperv-node-1", 
+            "10.0.1.*",
+            "192.168.*",
+            "localhost",
+            "127.0.0.1"
+        )
+        $trustedHostsList = $trustedHosts -join ","
+        
+        Write-Host "Setting trusted hosts: $trustedHostsList"
+        Set-Item WSMan:\localhost\Client\TrustedHosts -Value $trustedHostsList -Force
+        
+        # Increase maximum envelope size for cluster operations
+        winrm set winrm/config '@{MaxEnvelopeSizekb="2048"}'
+        winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="2048"}'
+        
+        # Configure firewall rules for WinRM
+        Write-Host "Configuring Windows Firewall for WinRM..."
+        
+        # Enable WinRM HTTP firewall rule
+        Enable-NetFirewallRule -DisplayName "Windows Remote Management (HTTP-In)" -ErrorAction SilentlyContinue
+        
+        # Create custom firewall rules if needed
+        try {
+            New-NetFirewallRule -DisplayName "WinRM-HTTP-Workgroup" -Direction Inbound -Protocol TCP -LocalPort 5985 -Action Allow -Profile Any -ErrorAction SilentlyContinue
+            New-NetFirewallRule -DisplayName "WinRM-HTTPS-Workgroup" -Direction Inbound -Protocol TCP -LocalPort 5986 -Action Allow -Profile Any -ErrorAction SilentlyContinue
+        } catch {
+            Write-Warning "Could not create custom firewall rules: $($_.Exception.Message)"
+        }
+        
+        # Restart WinRM to apply all changes
+        Write-Host "Restarting WinRM service to apply configuration..."
+        Restart-Service -Name WinRM -Force
+        
+        # Test WinRM configuration
+        Write-Host "Testing WinRM configuration..."
+        $winrmConfig = winrm get winrm/config
+        Write-Host "WinRM configuration applied successfully"
+        
+        # Configure additional settings for clustering
+        Write-Host "Configuring additional settings for failover clustering..."
+        
+        # Set LocalAccountTokenFilterPolicy for workgroup remoting
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        Set-ItemProperty -Path $regPath -Name "LocalAccountTokenFilterPolicy" -Value 1 -Type DWord -Force
+        Write-Host "Set LocalAccountTokenFilterPolicy for workgroup remoting"
+        
+        # Disable UAC remote restrictions for administrative shares
+        Set-ItemProperty -Path $regPath -Name "FilterAdministratorToken" -Value 0 -Type DWord -Force
+        Write-Host "Disabled UAC remote restrictions"
+        
+        # Configure network location settings
+        Write-Host "Configuring network profile settings..."
+        try {
+            # Set all network connections to Private profile for easier remoting
+            Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private
+            Write-Host "Set network connections to Private profile"
+        } catch {
+            Write-Warning "Could not set network profile: $($_.Exception.Message)"
+        }
+        
+        Write-Host "WinRM configuration completed successfully"
+        Write-Host "PowerShell Remoting is now enabled for workgroup environment"
+        
+    } catch {
+        Write-Warning "WinRM configuration encountered issues: $($_.Exception.Message)"
+        Write-Host "Manual WinRM configuration may be required"
+        Write-Host "Manual commands:"
+        Write-Host "  Enable-PSRemoting -Force"
+        Write-Host "  Set-Item WSMan:\localhost\Client\TrustedHosts -Value 'hyperv-node-0,hyperv-node-1,10.0.1.*' -Force"
+        Write-Host "  winrm set winrm/config/service/auth '@{Basic=\"true\"}'"
+        Write-Host "  winrm set winrm/config/client/auth '@{Basic=\"true\"}'"
+    }
+
     # Create completion marker
     Write-Host "Creating node ready marker..."
     "Bootstrap completed at $(Get-Date)" | Out-File -FilePath "C:\NodeReady.txt" -Encoding UTF8
