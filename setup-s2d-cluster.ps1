@@ -228,7 +228,7 @@ try {
             Write-Host "Creating demo volume 'S2D-Volume01'..."
             $volume = New-Volume -StoragePoolFriendlyName $storagePool.FriendlyName -FriendlyName "S2D-Volume01" -FileSystem NTFS -Size 100GB -ErrorAction SilentlyContinue
             if ($volume) {
-                Write-Host "✓ Demo volume created: $($volume.DriveLetter): ($([math]::Round($volume.SizeRemaining/1GB,2)) GB available)"
+                Write-Host "✓ Demo volume created: $($volume.DriveLetter): $([math]::Round($volume.SizeRemaining/1GB,2)) GB available"
             }
         } catch {
             Write-Warning "Could not create demo volume: $($_.Exception.Message)"
