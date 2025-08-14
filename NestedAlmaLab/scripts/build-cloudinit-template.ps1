@@ -168,7 +168,8 @@ build {
       # Clear machine-id again (important for cloning)
       "echo -n > /etc/machine-id",
       
-      # Clear SSH host keys (cloud-init will regenerate them)
+      # Remove Packer SSH marker and clear SSH host keys for template
+      "rm -f /etc/ssh/.packer-ssh-marker",
       "rm -f /etc/ssh/ssh_host_*",
       
       # Clear bash history
