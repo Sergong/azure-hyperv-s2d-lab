@@ -70,7 +70,8 @@ $originalISO = $config["iso_path"]
 $outputDir = Join-Path (Split-Path $PSScriptRoot) "custom-iso"
 $customISOName = "AlmaLinux-$KickstartVersion-Gen$Generation-Custom.iso"
 $customISO = Join-Path $outputDir $customISOName
-$workDir = Join-Path $env:TEMP "alma-iso-custom"
+# Use a more accessible temporary directory to avoid permission issues
+$workDir = Join-Path $env:USERPROFILE "alma-iso-temp-$(Get-Random)"
 $extractDir = Join-Path $workDir "extracted"
 $kickstartFile = Join-Path $PSScriptRoot "..\templates\AlmaLinux\$KickstartVersion\ks.cfg"
 
@@ -227,7 +228,27 @@ try {
     
     Write-Host "Copying kickstart file..."
     # Copy kickstart file to ISO root
-    Copy-Item $kickstartFile "$extractDir\ks.cfg"
+    try {
+        Copy-Item $kickstartFile "$extractDir\ks.cfg" -Force -ErrorAction Stop
+        Write-Host "  Kickstart file copied successfully"
+    } catch {
+        Write-Host "  Warning: Failed to copy kickstart file, trying alternative method..." -ForegroundColor Yellow
+        try {
+            # Alternative: Use robocopy for more robust file copying
+            $robocopyResult = robocopy (Split-Path $kickstartFile) $extractDir (Split-Path $kickstartFile -Leaf) /R:3 /W:1 /NP /NJH /NJS
+            if (Test-Path "$extractDir\$(Split-Path $kickstartFile -Leaf)") {
+                if ((Split-Path $kickstartFile -Leaf) -ne "ks.cfg") {
+                    Move-Item "$extractDir\$(Split-Path $kickstartFile -Leaf)" "$extractDir\ks.cfg" -Force
+                }
+                Write-Host "  Kickstart file copied successfully using robocopy"
+            } else {
+                throw "Robocopy also failed"
+            }
+        } catch {
+            Write-Error "Cannot copy kickstart file to ISO directory. Check file permissions."
+            throw
+        }
+    }
     
     Write-Host "Modifying boot configuration..."
     
@@ -308,14 +329,34 @@ try {
     
     Write-Host "Creating custom ISO..."
     # Create the custom ISO using oscdimg with proper UEFI/BIOS hybrid support
-    $oscdimgArgs = @(
-        "-n"                    # Allow long file names
-        "-m"                    # Ignore maximum image size limit
-        "-h"                    # Include hidden files
-        "-l"                    # Long file name support
-        "-j2"                   # Use Joliet file system level 2
-        "-o"                    # Optimize layout
-    )
+    # Note: -j2 (Joliet) conflicts with -n (long file names), so we use separate approaches
+    
+    # Detect the best approach based on content analysis
+    $needsLongNames = $false
+    $files = Get-ChildItem $extractDir -Recurse -File | Where-Object { $_.Name.Length -gt 31 }
+    if ($files.Count -gt 0) {
+        $needsLongNames = $true
+        Write-Host "  Long filenames detected - using ISO 9660 Level 2 with long name support"
+    }
+    
+    if ($needsLongNames) {
+        # Use ISO 9660 with long name support (no Joliet to avoid conflict)
+        $oscdimgArgs = @(
+            "-n"                    # Allow long file names
+            "-m"                    # Ignore maximum image size limit
+            "-h"                    # Include hidden files
+            "-l"                    # Long file name support
+            "-o"                    # Optimize layout
+        )
+    } else {
+        # Use Joliet file system for better compatibility
+        $oscdimgArgs = @(
+            "-j2"                   # Use Joliet file system level 2
+            "-m"                    # Ignore maximum image size limit
+            "-h"                    # Include hidden files
+            "-o"                    # Optimize layout
+        )
+    }
     
     # Check for both BIOS and UEFI boot files
     $hasBiosBooter = Test-Path "$extractDir\isolinux\isolinux.bin"
