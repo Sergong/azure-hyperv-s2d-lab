@@ -81,8 +81,6 @@ source "hyperv-iso" "almalinux" {
   
   # Network
   switch_name      = "Default Switch"
-  host_port_min    = 8080
-  host_port_max    = 8090
   
   # Temporary paths for Windows
   temp_path        = var.temp_path
