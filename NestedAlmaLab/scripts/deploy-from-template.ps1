@@ -3,7 +3,7 @@
 
 param(
     [Parameter(Mandatory=$false)]
-    [string]$TemplatePath = "C:\Packer\Output",
+    [string]$TemplatePath = "",
     
     [Parameter(Mandatory=$false)]
     [int]$VMCount = 2,
@@ -26,6 +26,40 @@ param(
     [Parameter(Mandatory=$false)]
     [switch]$StartVMs
 )
+
+# Auto-detect template path if not provided
+if ([string]::IsNullOrWhiteSpace($TemplatePath)) {
+    $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $projectRoot = Split-Path -Parent $scriptPath
+    
+    # Look for common Packer output directories
+    $possiblePaths = @(
+        Join-Path $projectRoot "output-almalinux-simple",
+        Join-Path $projectRoot "output-almalinux",
+        "C:\Packer\Output",
+        Join-Path $projectRoot "output"
+    )
+    
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            $vhdxFiles = Get-ChildItem "$path\*.vhdx" -ErrorAction SilentlyContinue
+            if ($vhdxFiles) {
+                $TemplatePath = $path
+                Write-Host "Auto-detected template path: $TemplatePath" -ForegroundColor Green
+                break
+            }
+        }
+    }
+    
+    if ([string]::IsNullOrWhiteSpace($TemplatePath)) {
+        Write-Error "Could not auto-detect template path. Please specify -TemplatePath parameter."
+        Write-Host "Searched in:"
+        foreach ($path in $possiblePaths) {
+            Write-Host "  - $path"
+        }
+        exit 1
+    }
+}
 
 Write-Host "=== Deploy VMs from Packer Template ===" -ForegroundColor Cyan
 Write-Host "Template Path: $TemplatePath"
@@ -185,18 +219,18 @@ foreach ($vmName in $deployedVMs) {
 Write-Host "`n=== Template Information ===" -ForegroundColor Cyan
 Write-Host "Template includes:"
 Write-Host "- AlmaLinux 9 with latest updates"
-Write-Host "- Docker + Docker Compose pre-installed"
-Write-Host "- Development tools (git, vim, python3, nodejs, go, rust)"
-Write-Host "- Ansible core for automation"
+Write-Host "- Hyper-V integration services"
+Write-Host "- Network utilities and development tools"
 Write-Host "- SSH configured for immediate access"
+Write-Host "- Static IP network configuration"
 Write-Host "- Nested virtualization enabled (if supported)"
 
 Write-Host "`n=== Access Information ===" -ForegroundColor Yellow
 Write-Host "Default credentials for all VMs:"
-Write-Host "- SSH: root / alma123!"
+Write-Host "- SSH: root / packer"
 Write-Host "- SSH: labuser / labpass123!"
+Write-Host "- Static IP: 192.168.200.100 (template default)"
 Write-Host "- All VMs are ready for immediate SSH access"
-Write-Host "- No additional configuration required"
 
 Write-Host "`n=== Management Commands ===" -ForegroundColor White
 Write-Host "Check VM status:     Get-VM $VMPrefix-*"
