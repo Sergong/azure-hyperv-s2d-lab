@@ -32,8 +32,8 @@ variable "vm_name" {
 }
 
 source "hyperv-iso" "almalinux" {
-  # ISO Configuration - Using AlmaLinux 9.3 (stable)
-  iso_url      = "https://repo.almalinux.org/almalinux/9.3/isos/x86_64/AlmaLinux-9.3-x86_64-minimal.iso"
+  # ISO Configuration - Using local ISO file
+  iso_paths    = ["C:/ISOs/AlmaLinux-9-latest-x86_64-dvd.iso"]
   iso_checksum = "none"  # Skip checksum verification
   
   # VM Configuration

@@ -71,7 +71,17 @@ if (-not (Test-Path $kickstartPath)) {
     exit 1
 }
 
+# Check ISO file
+$isoPath = "C:\ISOs\AlmaLinux-9-latest-x86_64-dvd.iso"
+if (-not (Test-Path $isoPath)) {
+    Write-Error "ISO file not found: $isoPath"
+    Write-Host "Please ensure the AlmaLinux ISO is available at: $isoPath"
+    exit 1
+}
+
+$isoSize = (Get-Item $isoPath).Length / 1MB
 Write-Host "  [OK] Template files found" -ForegroundColor Green
+Write-Host "  [OK] ISO file found: $isoPath ($([math]::Round($isoSize, 1)) MB)" -ForegroundColor Green
 
 # Check switch
 $vmSwitch = Get-VMSwitch -Name $SwitchName -ErrorAction SilentlyContinue
@@ -104,6 +114,7 @@ Write-Host "  [OK] Output directory ready" -ForegroundColor Green
 Write-Host "`n3. Creating variables..." -ForegroundColor Yellow
 $variablesFile = Join-Path $scriptPath "simple-vars.pkrvars.hcl"
 $variablesContent = @"
+iso_path = "C:/ISOs/AlmaLinux-9-latest-x86_64-dvd.iso"
 generation = $Generation
 switch_name = "$SwitchName"
 output_directory = "$($outputPath.Replace('\', '/'))"
