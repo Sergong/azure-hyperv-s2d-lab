@@ -234,30 +234,104 @@ try {
         }
         
         "cdrtfe" {
-            # CDRTFE does have command line support via parameters
+            # CDRTFE command line support - try multiple syntax approaches
             Write-Host "  Using CDRTFE command line interface..."
             
-            # CDRTFE command line parameters for ISO creation
-            $cdrtfeArgs = @(
-                "-iso"
-                "-folder2iso"
-                "-source"
-                "${extractDir}"
-                "-target"
-                "${customISO}"
-                "-close"
-                "-shutdown"
-            )
-            
-            Write-Host "  Running: cdrtfe $($cdrtfeArgs -join ' ')"
-            $result = & $isoTool @cdrtfeArgs 2>&1
-            
-            # CDRTFE might return different exit codes, so check if file was created
-            if (-not (Test-Path $customISO)) {
-                throw "CDRTFE failed to create ISO: $result"
+            # Try Method 1: Standard CDRTFE CLI syntax
+            try {
+                Write-Host "  Attempting CDRTFE method 1: Standard CLI syntax"
+                $cdrtfeArgs1 = @(
+                    "/iso"
+                    "/source:${extractDir}"
+                    "/target:${customISO}"
+                    "/close"
+                )
+                
+                Write-Host "  Running: cdrtfe $($cdrtfeArgs1 -join ' ')"
+                $result = & $isoTool @cdrtfeArgs1 2>&1
+                
+                # Wait a moment for file creation
+                Start-Sleep -Seconds 2
+                
+                if (Test-Path $customISO) {
+                    Write-Host "  CDRTFE method 1 completed successfully" -ForegroundColor Green
+                    return
+                }
+            } catch {
+                Write-Host "  CDRTFE method 1 failed: $($_.Exception.Message)"
             }
             
-            Write-Host "  CDRTFE completed successfully"
+            # Try Method 2: Alternative CDRTFE syntax
+            try {
+                Write-Host "  Attempting CDRTFE method 2: Alternative syntax"
+                $cdrtfeArgs2 = @(
+                    "-createiso"
+                    "-source"
+                    "${extractDir}"
+                    "-destination"
+                    "${customISO}"
+                    "-quit"
+                )
+                
+                Write-Host "  Running: cdrtfe $($cdrtfeArgs2 -join ' ')"
+                $result = & $isoTool @cdrtfeArgs2 2>&1
+                
+                Start-Sleep -Seconds 2
+                
+                if (Test-Path $customISO) {
+                    Write-Host "  CDRTFE method 2 completed successfully" -ForegroundColor Green
+                    return
+                }
+            } catch {
+                Write-Host "  CDRTFE method 2 failed: $($_.Exception.Message)"
+            }
+            
+            # Try Method 3: Simple folder-to-ISO
+            try {
+                Write-Host "  Attempting CDRTFE method 3: Simple syntax"
+                $cdrtfeArgs3 = @(
+                    "${extractDir}"
+                    "${customISO}"
+                )
+                
+                Write-Host "  Running: cdrtfe $($cdrtfeArgs3 -join ' ')"
+                $result = & $isoTool @cdrtfeArgs3 2>&1
+                
+                Start-Sleep -Seconds 3
+                
+                if (Test-Path $customISO) {
+                    Write-Host "  CDRTFE method 3 completed successfully" -ForegroundColor Green
+                    return
+                }
+            } catch {
+                Write-Host "  CDRTFE method 3 failed: $($_.Exception.Message)"
+            }
+            
+            # If all methods failed, provide helpful information
+            Write-Host "  All CDRTFE command-line methods failed. Output from attempts:" -ForegroundColor Yellow
+            Write-Host "  $result"
+            
+            # Fallback: try to launch CDRTFE GUI with pre-filled settings
+            Write-Host "  Attempting to launch CDRTFE GUI for manual ISO creation..." -ForegroundColor Yellow
+            try {
+                Start-Process $isoTool -ArgumentList "/source:${extractDir}" -NoNewWindow
+                Write-Host "  CDRTFE GUI launched. Please:"
+                Write-Host "  1. Select 'Create Data Disc' tab"
+                Write-Host "  2. Source should be pre-filled: ${extractDir}"
+                Write-Host "  3. Set target to: ${customISO}"
+                Write-Host "  4. Click 'Create ISO'"
+                Write-Host "  5. Press any key here once the ISO is created..."
+                
+                Read-Host "Press Enter when ISO creation is complete"
+                
+                if (Test-Path $customISO) {
+                    Write-Host "  ISO created successfully via CDRTFE GUI" -ForegroundColor Green
+                } else {
+                    throw "ISO was not created via CDRTFE GUI"
+                }
+            } catch {
+                throw "CDRTFE failed to create ISO via command line or GUI: $($_.Exception.Message). Consider using PowerISO or oscdimg instead."
+            }
         }
         
         default {
