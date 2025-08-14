@@ -269,21 +269,37 @@ try {
         Write-Host "Modifying BIOS boot configuration..."
         $content = Get-Content $isolinuxCfg
         
-        # Find and modify the default install entry
+        # Find and modify boot entries - try multiple patterns
         $modified = $false
         for ($i = 0; $i -lt $content.Count; $i++) {
+            # Pattern 1: Direct append line with vmlinuz
             if ($content[$i] -match '^\s*append\s+.*vmlinuz') {
-                # Add kickstart parameters to the kernel command line
                 $content[$i] = $content[$i] + " $bootParams"
                 $modified = $true
-                Write-Host "  Modified BIOS boot entry: $($content[$i])"
+                Write-Host "  Modified BIOS boot entry (append): $($content[$i])"
+            }
+            # Pattern 2: Append line without vmlinuz (common in modern isolinux)
+            elseif ($content[$i] -match '^\s*append\s+') {
+                $content[$i] = $content[$i] + " $bootParams"
+                $modified = $true
+                Write-Host "  Modified BIOS boot entry (append): $($content[$i])"
+            }
+            # Pattern 3: Kernel line (alternative format)
+            elseif ($content[$i] -match '^\s*kernel\s+') {
+                # For kernel lines, we need to modify the next append line
+                if (($i + 1) -lt $content.Count -and $content[$i + 1] -match '^\s*append\s+') {
+                    $content[$i + 1] = $content[$i + 1] + " $bootParams"
+                    $modified = $true
+                    Write-Host "  Modified BIOS boot entry (kernel+append): $($content[$i + 1])"
+                }
             }
         }
         
         if ($modified) {
             Set-Content $isolinuxCfg $content
+            Write-Host "  BIOS boot configuration updated successfully"
         } else {
-            Write-Warning "Could not find BIOS boot entry to modify"
+            Write-Host "  No BIOS boot entries found to modify (this may be normal for UEFI-only ISOs)" -ForegroundColor Yellow
         }
     }
     
@@ -293,21 +309,34 @@ try {
         Write-Host "Modifying UEFI boot configuration..."
         $content = Get-Content $grubCfg
         
-        # Find and modify the linux boot entries
+        # Find and modify the linux boot entries - try multiple patterns
         $modified = $false
         for ($i = 0; $i -lt $content.Count; $i++) {
+            # Pattern 1: linux line with vmlinuz path
             if ($content[$i] -match '^\s*linux\s+.*vmlinuz') {
-                # Add kickstart parameters to the kernel command line
                 $content[$i] = $content[$i] + " $bootParams"
                 $modified = $true
-                Write-Host "  Modified UEFI boot entry: $($content[$i])"
+                Write-Host "  Modified UEFI boot entry (linux+vmlinuz): $($content[$i])"
+            }
+            # Pattern 2: linux line without vmlinuz (path might be different)
+            elseif ($content[$i] -match '^\s*linux\s+') {
+                $content[$i] = $content[$i] + " $bootParams"
+                $modified = $true
+                Write-Host "  Modified UEFI boot entry (linux): $($content[$i])"
+            }
+            # Pattern 3: linuxefi (used on some RHEL-based systems)
+            elseif ($content[$i] -match '^\s*linuxefi\s+') {
+                $content[$i] = $content[$i] + " $bootParams"
+                $modified = $true
+                Write-Host "  Modified UEFI boot entry (linuxefi): $($content[$i])"
             }
         }
         
         if ($modified) {
             Set-Content $grubCfg $content
+            Write-Host "  UEFI boot configuration updated successfully"
         } else {
-            Write-Warning "Could not find UEFI boot entry to modify"
+            Write-Host "  No UEFI boot entries found to modify (this may be normal for BIOS-only ISOs)" -ForegroundColor Yellow
         }
     }
     
@@ -317,14 +346,32 @@ try {
         Write-Host "Modifying additional GRUB configuration..."
         $content = Get-Content $grubCfg2
         
+        $modified2 = $false
         for ($i = 0; $i -lt $content.Count; $i++) {
+            # Try multiple patterns for grub2 as well
             if ($content[$i] -match '^\s*linux\s+.*vmlinuz') {
                 $content[$i] = $content[$i] + " $bootParams"
-                Write-Host "  Modified GRUB2 boot entry: $($content[$i])"
+                $modified2 = $true
+                Write-Host "  Modified GRUB2 boot entry (linux+vmlinuz): $($content[$i])"
+            }
+            elseif ($content[$i] -match '^\s*linux\s+') {
+                $content[$i] = $content[$i] + " $bootParams"
+                $modified2 = $true
+                Write-Host "  Modified GRUB2 boot entry (linux): $($content[$i])"
+            }
+            elseif ($content[$i] -match '^\s*linuxefi\s+') {
+                $content[$i] = $content[$i] + " $bootParams"
+                $modified2 = $true
+                Write-Host "  Modified GRUB2 boot entry (linuxefi): $($content[$i])"
             }
         }
         
-        Set-Content $grubCfg2 $content
+        if ($modified2) {
+            Set-Content $grubCfg2 $content
+            Write-Host "  Additional GRUB2 configuration updated successfully"
+        } else {
+            Write-Host "  No additional GRUB2 boot entries found to modify" -ForegroundColor Yellow
+        }
     }
     
     Write-Host "Creating custom ISO..."
