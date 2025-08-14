@@ -3,7 +3,7 @@ vm_prefix: "AlmaVM"
 vm_count: 2
 vm_memory: 2GB
 vm_disk_size_gb: 30
-vm_generation: 2
+vm_generation: 1
 vm_switch: "InternalLabSwitch"
 
 # Paths

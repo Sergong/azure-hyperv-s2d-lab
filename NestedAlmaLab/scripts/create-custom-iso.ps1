@@ -20,7 +20,7 @@ param(
     
     [Parameter(Mandatory=$false)]
     [ValidateSet(1, 2)]
-    [int]$Generation = 2
+    [int]$Generation = 1
 )
 
 # Load configuration
