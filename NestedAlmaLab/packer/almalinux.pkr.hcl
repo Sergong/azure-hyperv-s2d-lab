@@ -1,6 +1,16 @@
 # AlmaLinux Packer Template for Hyper-V
 # Builds a pre-configured AlmaLinux VM image ready for lab use
 
+# Required plugins
+packer {
+  required_plugins {
+    hyperv = {
+      version = ">= 1.1.1"
+      source  = "github.com/hashicorp/hyperv"
+    }
+  }
+}
+
 # Variables
 variable "vm_name" {
   type    = string
@@ -47,6 +57,11 @@ variable "temp_path" {
   default = "C:/Packer/Temp"
 }
 
+variable "kickstart_version" {
+  type    = string
+  default = "v2"
+}
+
 # Sources
 source "hyperv-iso" "almalinux" {
   # VM Configuration
@@ -81,7 +96,7 @@ source "hyperv-iso" "almalinux" {
   ]
   
   # HTTP server for kickstart
-  http_directory   = "../templates/AlmaLinux/packer"
+  http_directory   = "../templates/AlmaLinux/${var.kickstart_version}"
   http_port_min    = 8080
   http_port_max    = 8090
   

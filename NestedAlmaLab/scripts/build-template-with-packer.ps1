@@ -132,6 +132,7 @@ vm_memory = 2048
 vm_disk_size = 30720
 output_directory = "${outputPathHCL}"
 temp_path = "${tempPathHCL}"
+kickstart_version = "${KickstartVersion}"
 ssh_username = "root"
 ssh_password = "alma123!"
 "@
@@ -176,10 +177,17 @@ try {
     
     # Initialize Packer (downloads required plugins)
     Write-Host "Initializing Packer plugins..." -ForegroundColor Yellow
-    & packer init .
+    Write-Host "  Downloading Hyper-V plugin..."
+    $initResult = & packer init . 2>&1
     if ($LASTEXITCODE -ne 0) {
-        throw "Packer init failed"
+        Write-Error "Packer init failed: $initResult"
+        Write-Host "This might be due to:"
+        Write-Host "1. Internet connectivity issues"
+        Write-Host "2. Firewall blocking plugin downloads"
+        Write-Host "3. Proxy configuration needed"
+        throw "Packer plugin initialization failed"
     }
+    Write-Host "  Plugins initialized successfully" -ForegroundColor Green
     
     # Validate template
     Write-Host "Validating Packer template..." -ForegroundColor Yellow

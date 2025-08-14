@@ -1,0 +1,6 @@
+{
+  "plugin_min_port": 10000,
+  "plugin_max_port": 25000,
+  "disable_checkpoint": false,
+  "disable_checkpoint_signature": false
+}
