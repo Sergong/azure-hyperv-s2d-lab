@@ -31,13 +31,13 @@ function Test-NetworkConnectivity {
     try {
         $result = Test-NetConnection -ComputerName $Target -Port 80 -InformationLevel Quiet -WarningAction SilentlyContinue
         if ($result) {
-            Write-Host "    ✅ $TestName: OK" -ForegroundColor Green
+            Write-Host "    [OK] $TestName: OK" -ForegroundColor Green
         } else {
-            Write-Host "    ❌ $TestName: Failed" -ForegroundColor Red
+            Write-Host "    [FAIL] $TestName: Failed" -ForegroundColor Red
         }
         return $result
     } catch {
-        Write-Host "    ❌ $TestName: Error - $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "    [ERROR] $TestName: Error - $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 }
@@ -46,13 +46,13 @@ function Test-NetworkConnectivity {
 Write-Host "`n1. Checking Hyper-V service..." -ForegroundColor Yellow
 $vmmsService = Get-Service -Name vmms -ErrorAction SilentlyContinue
 if ($vmmsService -and $vmmsService.Status -eq "Running") {
-    Write-Host "  ✅ Hyper-V Virtual Machine Management service is running" -ForegroundColor Green
+    Write-Host "  [OK] Hyper-V Virtual Machine Management service is running" -ForegroundColor Green
 } else {
-    Write-Host "  ❌ Hyper-V service issue" -ForegroundColor Red
+    Write-Host "  [FAIL] Hyper-V service issue" -ForegroundColor Red
     Write-Host "  Fix: Restart-Service vmms"
     try {
         Restart-Service vmms -Force
-        Write-Host "  ✅ Hyper-V service restarted" -ForegroundColor Green
+        Write-Host "  [OK] Hyper-V service restarted" -ForegroundColor Green
     } catch {
         Write-Error "  Failed to restart Hyper-V service: $($_.Exception.Message)"
     }
@@ -63,7 +63,7 @@ Write-Host "`n2. Checking VM switches..." -ForegroundColor Yellow
 $switches = Get-VMSwitch
 Write-Host "  Found $($switches.Count) VM switches:"
 foreach ($switch in $switches) {
-    $status = if ($switch.SwitchType -eq "External") {"🌐"} elseif ($switch.SwitchType -eq "Internal") {"🏠"} else {"🔒"}
+    $status = if ($switch.SwitchType -eq "External") {"[EXT]"} elseif ($switch.SwitchType -eq "Internal") {"[INT]"} else {"[PVT]"}
     Write-Host "    $status $($switch.Name) ($($switch.SwitchType))"
 }
 
@@ -71,21 +71,21 @@ foreach ($switch in $switches) {
 Write-Host "`n3. Checking Default Switch..." -ForegroundColor Yellow
 $defaultSwitch = Get-VMSwitch -Name "Default Switch" -ErrorAction SilentlyContinue
 if ($defaultSwitch) {
-    Write-Host "  ✅ Default Switch exists" -ForegroundColor Green
+    Write-Host "  [OK] Default Switch exists" -ForegroundColor Green
     
     # Check associated network adapters
     $adapters = Get-NetAdapter | Where-Object {$_.InterfaceDescription -match "Default"}
     if ($adapters) {
-        Write-Host "  ✅ Found Default Switch adapters:" -ForegroundColor Green
+        Write-Host "  [OK] Found Default Switch adapters:" -ForegroundColor Green
         foreach ($adapter in $adapters) {
             $ip = (Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).IPAddress
             Write-Host "    - $($adapter.Name): $($adapter.Status) (IP: $ip)"
         }
     } else {
-        Write-Host "  ❌ No Default Switch adapters found" -ForegroundColor Red
+        Write-Host "  [FAIL] No Default Switch adapters found" -ForegroundColor Red
     }
 } else {
-    Write-Host "  ❌ Default Switch not found" -ForegroundColor Red
+    Write-Host "  [FAIL] Default Switch not found" -ForegroundColor Red
     Write-Host "  This will cause Packer networking issues."
 }
 
@@ -104,7 +104,7 @@ try {
         Write-Host "  Active firewall profiles: $($activeProfiles.Name -join ', ')" -ForegroundColor Yellow
         Write-Host "  Packer may need firewall exceptions for HTTP server (ports 8080-8090)"
     } else {
-        Write-Host "  ✅ Windows Firewall is disabled" -ForegroundColor Green
+        Write-Host "  [OK] Windows Firewall is disabled" -ForegroundColor Green
     }
 } catch {
     Write-Warning "  Could not check firewall status"
@@ -114,7 +114,7 @@ try {
 Write-Host "`n=== SOLUTIONS ===" -ForegroundColor Cyan
 
 if (-not $defaultSwitch) {
-    Write-Host "❌ Missing Default Switch - Major Issue" -ForegroundColor Red
+    Write-Host "[CRITICAL] Missing Default Switch - Major Issue" -ForegroundColor Red
     Write-Host "Solutions:"
     Write-Host "1. Enable Windows features:"
     Write-Host "   Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All"
@@ -150,7 +150,7 @@ if ($CreateExternalSwitch) {
         try {
             Write-Host "Creating External switch 'PackerExternal'..." -ForegroundColor Yellow
             New-VMSwitch -Name "PackerExternal" -NetAdapterName $selectedAdapter.Name -AllowManagementOS $true
-            Write-Host "  ✅ External switch created successfully" -ForegroundColor Green
+            Write-Host "  [OK] External switch created successfully" -ForegroundColor Green
             Write-Host "  Update your Packer template to use: switch_name = 'PackerExternal'"
         } catch {
             Write-Error "Failed to create External switch: $($_.Exception.Message)"
