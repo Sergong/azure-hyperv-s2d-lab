@@ -336,8 +336,31 @@ for ($i = 1; $i -le $vmCount; $i++) {
         New-VHD -Path $vhdFile -SizeBytes ($vmVHDSizeGB * 1GB) -Dynamic -ErrorAction Stop | Out-Null
         
         Write-Host "  Creating VM with $($vmMemory / 1GB) GB RAM"
-        New-VM -Name $vmName -MemoryStartupBytes $vmMemory -Generation $vmGeneration `
-               -SwitchName $vmSwitchName -Path $vmPath -ErrorAction Stop | Out-Null
+        # Create VM with minimal parameters first to avoid configuration conflicts
+        $newVMParams = @{
+            Name = $vmName
+            MemoryStartupBytes = $vmMemory
+            Generation = $vmGeneration
+            Path = $vmPath
+            ErrorAction = "Stop"
+        }
+        
+        # Only add switch if it's not the default
+        if ($vmSwitchName -ne "Default Switch") {
+            $newVMParams["SwitchName"] = $vmSwitchName
+        }
+        
+        $vm = New-VM @newVMParams
+        
+        # Configure switch if needed after VM creation
+        if ($vmSwitchName -eq "Default Switch") {
+            try {
+                Connect-VMNetworkAdapter -VMName $vmName -SwitchName $vmSwitchName -ErrorAction Stop
+                Write-Host "  Connected to Default Switch"
+            } catch {
+                Write-Warning "  Could not connect to Default Switch: $($_.Exception.Message)"
+            }
+        }
         
         # Attach storage
         Add-VMHardDiskDrive -VMName $vmName -Path $vhdFile -ErrorAction Stop
@@ -351,15 +374,35 @@ for ($i = 1; $i -le $vmCount; $i++) {
             # Disable Secure Boot for Linux compatibility
             Set-VMFirmware -VMName $vmName -EnableSecureBoot Off -ErrorAction Stop
             Write-Host "  Disabled Secure Boot for Linux compatibility"
+            
+            # Enable nested virtualization for Gen 2 VMs
+            try {
+                Set-VMProcessor -VMName $vmName -ExposeVirtualizationExtensions $true -ErrorAction Stop
+                Write-Host "  Enabled nested virtualization"
+            } catch {
+                Write-Warning "  Could not enable nested virtualization: $($_.Exception.Message)"
+            }
+        } else {
+            # For Gen 1 VMs, try to enable nested virtualization but don't fail if it's not supported
+            try {
+                Set-VMProcessor -VMName $vmName -ExposeVirtualizationExtensions $true -ErrorAction Stop
+                Write-Host "  Enabled nested virtualization"
+            } catch {
+                Write-Warning "  Nested virtualization not supported on this system for Gen 1 VMs"
+            }
         }
-        Set-VMProcessor -VMName $vmName -ExposeVirtualizationExtensions $true -ErrorAction Stop
         
         # Only attach kickstart media if NOT using custom ISO
         if (-not $isCustomISO -and $kickstartMedia) {
             # Attach kickstart media based on generation
             if ($vmGeneration -eq 1) {
                 Write-Host "  Attaching kickstart floppy"
-                Add-VMFloppyDiskDrive -VMName $vmName -Path $kickstartMedia -ErrorAction Stop
+                try {
+                    Add-VMFloppyDiskDrive -VMName $vmName -Path $kickstartMedia -ErrorAction Stop
+                } catch {
+                    Write-Warning "  Failed to attach floppy drive: $($_.Exception.Message)"
+                    Write-Host "  Continuing without kickstart floppy - manual boot parameters will be required"
+                }
             } else {
                 Write-Host "  Attaching kickstart VHD as secondary disk"
                 Add-VMHardDiskDrive -VMName $vmName -Path $kickstartMedia -ErrorAction Stop
@@ -417,19 +460,30 @@ for ($i = 1; $i -le $vmCount; $i++) {
             }
         } else {
             # For Generation 1 VMs, set boot order
-            if ($isCustomISO) {
-                # Custom ISO - only need DVD boot
-                Set-VMBios -VMName $vmName -StartupOrder @("CD", "IDE") -ErrorAction Stop
-                Write-Host "  Configured Gen 1 VM for fully automated installation"
-                Write-Host "  Custom ISO contains embedded kickstart parameters"
-                Write-Host "  No manual intervention required - installation will proceed automatically"
-            } else {
-                # Standard ISO - need CD and Floppy boot order
-                Set-VMBios -VMName $vmName -StartupOrder @("CD", "Floppy", "IDE") -ErrorAction Stop
-                Write-Host "  Configured Gen 1 VM boot order: CD, Floppy, IDE"
-                $bootParameters = "inst.ks=$kickstartLocation inst.text console=tty0 console=ttyS0,115200"
-                Write-Host "  IMPORTANT: On first boot, press TAB at the boot menu and add these parameters:"
-                Write-Host "  $bootParameters"
+            try {
+                if ($isCustomISO) {
+                    # Custom ISO - only need DVD boot
+                    Set-VMBios -VMName $vmName -StartupOrder @("CD", "IDE") -ErrorAction Stop
+                    Write-Host "  Configured Gen 1 VM for fully automated installation"
+                    Write-Host "  Custom ISO contains embedded kickstart parameters"
+                    Write-Host "  No manual intervention required - installation will proceed automatically"
+                } else {
+                    # Standard ISO - try CD and Floppy boot order, fallback to CD only
+                    try {
+                        Set-VMBios -VMName $vmName -StartupOrder @("CD", "Floppy", "IDE") -ErrorAction Stop
+                        Write-Host "  Configured Gen 1 VM boot order: CD, Floppy, IDE"
+                    } catch {
+                        Write-Warning "  Could not set Floppy in boot order, using CD, IDE only"
+                        Set-VMBios -VMName $vmName -StartupOrder @("CD", "IDE") -ErrorAction Stop
+                        Write-Host "  Configured Gen 1 VM boot order: CD, IDE"
+                    }
+                    $bootParameters = "inst.ks=$kickstartLocation inst.text console=tty0 console=ttyS0,115200"
+                    Write-Host "  IMPORTANT: On first boot, press TAB at the boot menu and add these parameters:"
+                    Write-Host "  $bootParameters"
+                }
+            } catch {
+                Write-Warning "  Could not configure BIOS boot order: $($_.Exception.Message)"
+                Write-Host "  VM will use default boot order"
             }
         }
         
