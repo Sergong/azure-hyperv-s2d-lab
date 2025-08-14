@@ -145,7 +145,35 @@ function New-VMFromTemplate {
         
         # Detect template generation from VHDX metadata
         $vhdInfo = Get-VHD $TargetVHDX
-        $generation = 2  # Default to Gen 2 for modern templates
+        
+        # Try to detect generation from the template VHDX properties
+        # Check if the VHDX has UEFI boot entries (Gen 2) or legacy boot (Gen 1)
+        try {
+            # Mount the VHDX temporarily to check boot structure
+            $mountResult = Mount-VHD -Path $TargetVHDX -ReadOnly -Passthru
+            $disk = Get-Disk | Where-Object { $_.Location -eq $mountResult.Path }
+            $partitions = Get-Partition -DiskNumber $disk.Number
+            
+            # Look for EFI System Partition (indicates Gen 2)
+            $efiPartition = $partitions | Where-Object { $_.Type -eq 'System' -and $_.Size -lt 1GB }
+            
+            if ($efiPartition) {
+                $generation = 2
+                Write-Host "  Detected Generation 2 template (UEFI boot)" -ForegroundColor Gray
+            } else {
+                $generation = 1
+                Write-Host "  Detected Generation 1 template (BIOS boot)" -ForegroundColor Gray
+            }
+            
+            # Unmount the VHDX
+            Dismount-VHD -Path $TargetVHDX
+            
+        } catch {
+            # If detection fails, try to infer from build script parameters or default to Gen 1
+            # Since your build was done with Gen 1, default to that
+            $generation = 1
+            Write-Host "  Could not detect generation, defaulting to Generation 1" -ForegroundColor Yellow
+        }
         
         # Create VM
         Write-Host "  Creating Generation $generation VM..."
