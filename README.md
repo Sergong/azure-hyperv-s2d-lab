@@ -200,9 +200,9 @@ Invoke-Command -ComputerName hyperv-node-1 -ScriptBlock { Get-ComputerInfo } -Cr
 - Check Windows Event Logs if needed
 
 
-# Nested VMs Repo 
+# Nested AlmaLinux Lab with Cloud-Init
 
-This is a reusable, versioned repo to automate nested AlmaLinux provisioning inside your Azure-based Hyper-V cluster. This structure includes param-driven VM creation, ISO fetch logic, unattended installation via Kickstart, and support for post-install bootstraps. Clean, sharable, and future-proof.
+This is a streamlined, cloud-init based approach to automate nested AlmaLinux VM provisioning inside your Azure-based Hyper-V cluster. Using Packer templates and cloud-init, you can build once and deploy many VMs with unique configurations.
 
 ---
 
@@ -210,187 +210,137 @@ This is a reusable, versioned repo to automate nested AlmaLinux provisioning ins
 
 ```plaintext
 NestedAlmaLab/
-├── README.md
+├── README.md                                    # Comprehensive documentation
 ├── scripts/
-│   ├── config.yaml                  # Global config (VM count, memory, etc.)
-│   ├── fetch_iso.ps1               # Downloads AlmaLinux ISO
-│   ├── provision-vms.ps1           # Core provisioning logic
-│   ├── postinstall.ps1             # Optional: inject bootstrap scripts post-install
-│   └── postinstall.sh              # Optional: Run configuration inside the Alma VM
+│   ├── build-cloudinit-template.ps1            # Builds the cloud-init template
+│   ├── deploy-with-cloudinit.ps1               # Deploys VMs with cloud-init config  
+│   ├── deploy-examples.ps1                     # Example deployment scenarios
+│   └── fetch_iso.ps1                           # Downloads AlmaLinux ISO
 └── templates/
     └── AlmaLinux/
-        └── v1/
-            └── ks.cfg              # Kickstart for v1
-        └── v2/
-            └── ks.cfg              # Kickstart for v2
+        └── hyperv/
+            └── ks-with-cloudinit.cfg            # Cloud-init kickstart file
 ```
 
 ---
 
-## 🧰 `fetch_iso.ps1` – ISO Automation
+## 🚀 Quick Start: Cloud-Init Approach
+
+### 1. Build the Template (One Time)
 
 ```powershell
-# Download latest AlmaLinux ISO
-$isoUrl = "https://repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9-latest-x86_64.iso"
-$isoDest = "C:\ISOs\AlmaLinux-latest-x86_64.iso"
+# Navigate to NestedAlmaLab directory
+cd NestedAlmaLab
 
-Invoke-WebRequest -Uri $isoUrl -OutFile $isoDest -UseBasicParsing
-Write-Host "✅ ISO downloaded to $isoDest"
+# Download AlmaLinux ISO (if needed)
+.\scripts\fetch_iso.ps1
+
+# Build cloud-init enabled template
+.\scripts\build-cloudinit-template.ps1 -Generation 1
 ```
 
----
-
-## 🔧 `config.yaml` – Lab Config Sample
-
-```yaml
-vm_prefix: "AlmaVM"
-vm_count: 2
-vm_memory: 2GB
-vm_disk_size_gb: 30
-vm_generation: 2
-vm_switch: "InternalLabSwitch"
-ks_version: "v1"
-iso_path: "C:\\ISOs\\AlmaLinux-latest-x86_64.iso"
-ks_path: "config\\alma-ks-v1.cfg"
-```
-
----
-
-## 🚀 `provision-vms.ps1` – Nested VM Provisioner
+### 2. Deploy VMs with Unique Configurations
 
 ```powershell
-# Import config
-$config = ConvertFrom-Yaml (Get-Content "config\config.yaml" -Raw)
+# Deploy single test VM
+.\scripts\deploy-with-cloudinit.ps1 -VMCount 1 -StartVMs
 
-# Create VMs
-for ($i = 1; $i -le $config.vm_count; $i++) {
-    $vmName  = "$($config.vm_prefix)-$i"
-    $vmPath  = "C:\HyperV\VMs\$vmName"
-    $vhdPath = "$vmPath\$vmName.vhdx"
+# Deploy multiple VMs with custom network
+.\scripts\deploy-with-cloudinit.ps1 -VMCount 3 -NetworkSubnet '192.168.100' -StartVMs
 
-    # Create folders
-    New-Item -ItemType Directory -Path $vmPath -Force | Out-Null
+# Deploy with custom user and SSH key
+.\scripts\deploy-with-cloudinit.ps1 -VMCount 2 -Username 'admin' -SSHPublicKeyPath '~\.ssh\id_rsa.pub' -StartVMs
+```
 
-    # Create VM and attach ISO
-    New-VHD -Path $vhdPath -SizeBytes ($config.vm_disk_size_gb * 1GB) -Dynamic
-    New-VM -Name $vmName -MemoryStartupBytes $config.vm_memory -Generation $config.vm_generation `
-           -SwitchName $config.vm_switch -Path $vmPath
-    Add-VMHardDiskDrive -VMName $vmName -Path $vhdPath
-    Add-VMDvdDrive -VMName $vmName -Path $config.iso_path
-    Set-VMFirmware -VMName $vmName -EnableSecureBoot Off
-    Set-VMProcessor -VMName $vmName -ExposeVirtualizationExtensions $true
+### 3. Access Your VMs
 
-    # Start VM
-    Start-VM -Name $vmName
+```bash
+# SSH into deployed VMs
+ssh labuser@192.168.1.101  # Default user and IP
+ssh admin@192.168.100.101  # Custom user example
+```
+
+---
+
+## 🌟 Key Benefits of Cloud-Init Approach
+
+- **Build Once, Deploy Many**: Create a single template, deploy VMs with unique configs
+- **Static IP Management**: Automatic IP assignment per deployment  
+- **User Management**: Custom users with SSH keys and sudo access
+- **Security Hardened**: Secure defaults for deployed VMs
+- **Fully Automated**: No manual intervention required
+- **Nested Virtualization Ready**: Pre-configured for complex lab scenarios
+
+---
+
+## 📋 Deployment Examples
+
+### Development Environment
+```powershell
+# Single VM for development
+.\scripts\deploy-with-cloudinit.ps1 -VMCount 1 -Username 'developer' -Memory 4096 -CPUs 4 -StartVMs
+```
+
+### Testing Cluster
+```powershell
+# 5-node cluster on isolated network
+.\scripts\deploy-with-cloudinit.ps1 -VMCount 5 -NetworkSubnet '10.0.100' -SwitchName 'Internal' -StartVMs
+```
+
+### Production-Like Setup
+```powershell
+# Multi-node with SSH keys and custom resources
+.\scripts\deploy-with-cloudinit.ps1 `
+    -VMCount 3 `
+    -NetworkSubnet '172.16.10' `
+    -Username 'sysadmin' `
+    -SSHPublicKeyPath '~\.ssh\id_ed25519.pub' `
+    -Memory 8192 `
+    -CPUs 6 `
+    -StartVMs
+```
+
+---
+
+## 🔧 Making VMs Highly Available
+
+After deploying VMs with cloud-init, you can make them highly available in your cluster:
+
+```powershell
+# Make all cloud-init VMs highly available
+Get-VM AlmaLinux-CloudInit-* | ForEach-Object {
+    Add-ClusterVirtualMachineRole -VMName $_.Name -Cluster S2DCluster
 }
-```
 
----
-
-## 🔁 `postinstall.ps1` – Bootstrap Injection (Optional)
-
-```powershell
-# Sample: copy SSH key, inject Ansible agent
-$vmName = "AlmaVM-1"
-$vmIp   = "192.168.100.101"
-
-# Wait for SSH port
-while (-not (Test-NetConnection $vmIp -Port 22).TcpTestSucceeded) {
-    Start-Sleep -Seconds 10
-}
-
-# Copy postinstall.sh or run remote scripts
-scp .\scripts\postinstall.sh root@$vmIp:/root/
-ssh root@$vmIp "bash /root/postinstall.sh"
-```
-
----
-
-### 🚀 Making VMs Highly Available
-
-After provisioning VMs, you can make them highly available for automatic failover:
-
-```powershell
-# Navigate to the scripts directory
-cd NestedAlmaLab\scripts
-
-# Make all VMs highly available
-.\make-vms-ha.ps1
-
-# Or make specific VMs HA
-.\make-vms-ha.ps1 -VMNames "AlmaVM-1","AlmaVM-2"
-
-# Preview changes first
-.\make-vms-ha.ps1 -WhatIf
-```
-
-**What this does:**
-- Moves VM files to Cluster Shared Volume storage
-- Adds VMs to the failover cluster as highly available resources
-- Configures automatic failover and restart policies
-- Enables VM health monitoring and automatic recovery
-- Sets up load balancing across cluster nodes
-
-**Management Commands:**
-```powershell
-# Check HA VM status
+# Check HA status
 Get-ClusterResource | Where-Object ResourceType -eq 'Virtual Machine'
 
 # Manual failover test
-Move-ClusterVirtualMachineRole -Name "AlmaVM-1" -Node "hyperv-node-1"
-
-# Monitor cluster health
-Get-ClusterNode | Select Name,State
+Move-ClusterVirtualMachineRole -Name 'AlmaLinux-CloudInit-01' -Node 'hyperv-node-1'
 ```
 
-## ⚠️ Known Issues and Solutions
+**What HA provides:**
+- Automatic failover between cluster nodes
+- VM health monitoring and recovery
+- Storage migration to Cluster Shared Volume
+- Load balancing across nodes
+- High availability for critical workloads
 
-### Kickstart Boot Parameters Issue
+---
 
-**Problem**: The `provision-vms.ps1` script correctly creates VMs and attaches kickstart media, but doesn't automatically pass kernel boot parameters (`inst.ks=...`) to instruct AlmaLinux installer to use the kickstart file.
+## 🎯 Advanced Configuration
 
-**Impact**: 
-- VMs boot to AlmaLinux installer menu but require manual intervention
-- User must press TAB (or 'e' to edit) and add kickstart parameters manually
-- This affects both Generation 1 and Generation 2 VMs
+For advanced use cases, see the detailed documentation in `NestedAlmaLab/README.md`:
 
-**Solutions**:
-
-#### Option 1: Custom ISO with Embedded Kickstart (🔥 Recommended)
-Create a custom AlmaLinux ISO with kickstart parameters pre-configured for fully automated installation:
+- Custom kickstart modifications
+- Extended cloud-init modules
+- Integration with Ansible, Terraform
+- Security hardening options
+- Troubleshooting and logging
 
 ```powershell
-# Navigate to the scripts directory
-cd NestedAlmaLab\scripts
-
-# Create custom ISO for your VM generation and kickstart version
-.\create-custom-iso.ps1 -KickstartVersion v1 -Generation 2
-
-# Update config.yaml to use the custom ISO
-# iso_path: "C:\path\to\NestedAlmaLab\custom-iso\AlmaLinux-v1-Gen2-Custom.iso"
-
-# Run normal VM provisioning - now fully automated!
-.\provision-vms.ps1
+# View comprehensive documentation
+Get-Content NestedAlmaLab\README.md
 ```
-
-**Requirements for Custom ISO**:
-- Windows ADK (Assessment and Deployment Kit) - **automatically installed by the script if missing**
-- Administrator privileges (required for automatic ADK installation)
-- Script will prompt for permission before installing ADK
-- Creates ISOs with embedded kickstart parameters for both BIOS and UEFI boot
-- Manual ADK installation: https://docs.microsoft.com/en-us/windows-hardware/get-started/adk-install
-
-#### Option 2: Manual Boot Parameters (Current Method)
-When VMs boot for the first time:
-
-**For Generation 1 VMs**:
-- Press TAB at the boot menu
-- Add: `inst.ks=hd:fd0:/ks.cfg inst.text console=tty0 console=ttyS0,115200`
-- Press Enter
-
-**For Generation 2 VMs**:
-- Press TAB at the boot menu (or 'e' to edit)
-- Add: `inst.ks=hd:sdb1:/ks.cfg inst.text console=tty0 console=ttyS0,115200`
-- Press Ctrl+X (if using 'e' to edit) or Enter
 
 
