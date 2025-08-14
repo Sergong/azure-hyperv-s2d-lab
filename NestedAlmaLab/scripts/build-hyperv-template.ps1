@@ -61,12 +61,59 @@ try {
     exit 1
 }
 
-# Check Hyper-V
-$hypervFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All -ErrorAction SilentlyContinue
-if ($hypervFeature -and $hypervFeature.State -eq "Enabled") {
-    Write-Host "  [OK] Hyper-V is enabled" -ForegroundColor Green
+# Check Hyper-V - Multiple detection methods
+$hypervEnabled = $false
+
+# Method 1: Check Windows Feature
+try {
+    $hypervFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All -ErrorAction SilentlyContinue
+    if ($hypervFeature -and $hypervFeature.State -eq "Enabled") {
+        $hypervEnabled = $true
+    }
+} catch {
+    # Ignore errors, try other methods
+}
+
+# Method 2: Check for Hyper-V service
+if (-not $hypervEnabled) {
+    try {
+        $vmmsService = Get-Service -Name vmms -ErrorAction SilentlyContinue
+        if ($vmmsService) {
+            $hypervEnabled = $true
+        }
+    } catch {
+        # Ignore errors, try other methods
+    }
+}
+
+# Method 3: Check for Hyper-V PowerShell module
+if (-not $hypervEnabled) {
+    try {
+        $hypervModule = Get-Module -ListAvailable -Name Hyper-V -ErrorAction SilentlyContinue
+        if ($hypervModule) {
+            $hypervEnabled = $true
+        }
+    } catch {
+        # Ignore errors
+    }
+}
+
+# Method 4: Try to get VM switches (most reliable)
+if (-not $hypervEnabled) {
+    try {
+        $switches = Get-VMSwitch -ErrorAction SilentlyContinue
+        if ($switches) {
+            $hypervEnabled = $true
+        }
+    } catch {
+        # Final check failed
+    }
+}
+
+if ($hypervEnabled) {
+    Write-Host "  [OK] Hyper-V is enabled and functional" -ForegroundColor Green
 } else {
-    Write-Error "Hyper-V not enabled. Enable with: Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All"
+    Write-Error "Hyper-V not enabled or not functional. Enable with: Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All"
     exit 1
 }
 
