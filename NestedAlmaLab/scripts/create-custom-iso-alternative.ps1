@@ -78,11 +78,43 @@ if (Test-Path $powerISOPath) {
 
 # Method 2: Try cdrtfe (free tool - good alternative)
 if (-not $isoTool) {
-    $cdrPath = "${env:ProgramFiles}\cdrtfe\cdrtfe.exe"
-    if (Test-Path $cdrPath) {
-        $isoTool = $cdrPath
-        $isoMethod = "cdrtfe"
-        Write-Host "Found cdrtfe - using free alternative"
+    # Try multiple possible CDRTFE installation paths
+    $cdrtfePaths = @(
+        "${env:ProgramFiles}\cdrtfe\cdrtfe.exe",
+        "${env:ProgramFiles(x86)}\cdrtfe\cdrtfe.exe",
+        "${env:LOCALAPPDATA}\Programs\cdrtfe\cdrtfe.exe",
+        "C:\Program Files\cdrtfe\cdrtfe.exe",
+        "C:\Program Files (x86)\cdrtfe\cdrtfe.exe"
+    )
+    
+    Write-Host "Searching for CDRTFE in multiple locations..."
+    foreach ($cdrPath in $cdrtfePaths) {
+        Write-Host "  Checking: $cdrPath"
+        if (Test-Path $cdrPath) {
+            $isoTool = $cdrPath
+            $isoMethod = "cdrtfe"
+            Write-Host "Found cdrtfe at: $cdrPath - using free alternative" -ForegroundColor Green
+            break
+        }
+    }
+    
+    # If still not found, try to find it via registry or where command
+    if (-not $isoTool) {
+        Write-Host "  CDRTFE not found in standard locations, searching system..."
+        try {
+            # Try to find cdrtfe.exe anywhere on the system
+            $whereResult = cmd /c "where cdrtfe.exe 2>nul"
+            if ($LASTEXITCODE -eq 0 -and $whereResult) {
+                $cdrPath = $whereResult.Trim()
+                if (Test-Path $cdrPath) {
+                    $isoTool = $cdrPath
+                    $isoMethod = "cdrtfe"
+                    Write-Host "Found cdrtfe via system search at: $cdrPath" -ForegroundColor Green
+                }
+            }
+        } catch {
+            Write-Host "  System search failed: $($_.Exception.Message)"
+        }
     }
 }
 
@@ -202,10 +234,30 @@ try {
         }
         
         "cdrtfe" {
-            # cdrtfe command line (note: cdrtfe is typically GUI-based, but has some CLI support)
-            Write-Host "  Note: cdrtfe is primarily a GUI tool. You may need to create the ISO manually."
-            Write-Host "  Alternatively, please install PowerISO or use oscdimg as fallback."
-            throw "cdrtfe CLI support is limited - please use PowerISO or oscdimg instead"
+            # CDRTFE does have command line support via parameters
+            Write-Host "  Using CDRTFE command line interface..."
+            
+            # CDRTFE command line parameters for ISO creation
+            $cdrtfeArgs = @(
+                "-iso"
+                "-folder2iso"
+                "-source"
+                "${extractDir}"
+                "-target"
+                "${customISO}"
+                "-close"
+                "-shutdown"
+            )
+            
+            Write-Host "  Running: cdrtfe $($cdrtfeArgs -join ' ')"
+            $result = & $isoTool @cdrtfeArgs 2>&1
+            
+            # CDRTFE might return different exit codes, so check if file was created
+            if (-not (Test-Path $customISO)) {
+                throw "CDRTFE failed to create ISO: $result"
+            }
+            
+            Write-Host "  CDRTFE completed successfully"
         }
         
         default {
