@@ -19,7 +19,7 @@ param(
     [string]$ExternalAdapterName,
     
     [Parameter(Mandatory=$false)]
-    [switch]$Debug
+    [switch]$DebugMode
 )
 
 # Ensure we're running as Administrator
@@ -249,7 +249,7 @@ try {
         "-var-file=$variablesFile"
     )
     
-    if ($Debug) {
+    if ($DebugMode) {
         $buildArgs += "-debug"
     }
     
