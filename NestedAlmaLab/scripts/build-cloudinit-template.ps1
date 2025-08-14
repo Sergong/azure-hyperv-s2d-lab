@@ -81,7 +81,8 @@ variable "generation" {
 
 source "hyperv-iso" "almalinux-cloudinit" {
   # ISO configuration
-  iso_path    = var.iso_path
+  iso_url      = var.iso_path
+  iso_checksum = "none"
   iso_target_path = "C:/temp/packer-almalinux.iso"
   
   # VM configuration
