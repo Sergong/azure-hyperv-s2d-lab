@@ -10,7 +10,7 @@ param(
     [switch]$Force,
     
     [Parameter(Mandatory=$false)]
-    [string]$SwitchName = "PackerExternal"
+    [string]$SwitchName = "PackerInternal"
 )
 
 # Check if running as Administrator
@@ -83,19 +83,72 @@ $isoSize = (Get-Item $isoPath).Length / 1MB
 Write-Host "  [OK] Template files found" -ForegroundColor Green
 Write-Host "  [OK] ISO file found: $isoPath ($([math]::Round($isoSize, 1)) MB)" -ForegroundColor Green
 
-# Check switch
+# Check/Create Internal switch with NAT (for Azure environments without DHCP)
+Write-Host "`n2. Configuring network switch..." -ForegroundColor Yellow
+
 $vmSwitch = Get-VMSwitch -Name $SwitchName -ErrorAction SilentlyContinue
 if (-not $vmSwitch) {
-    Write-Error "VM Switch '$SwitchName' not found"
-    Write-Host "Available switches:"
-    Get-VMSwitch | ForEach-Object { Write-Host "  - $($_.Name) ($($_.SwitchType))" }
-    exit 1
+    Write-Host "  Creating Internal switch '$SwitchName'..." -ForegroundColor Yellow
+    try {
+        # Create Internal switch
+        New-VMSwitch -Name $SwitchName -SwitchType Internal | Out-Null
+        Write-Host "  [OK] Internal switch created" -ForegroundColor Green
+        
+        # Get the adapter index for NAT configuration
+        Start-Sleep 2  # Wait for switch to be fully created
+        $adapter = Get-NetAdapter -Name "*$SwitchName*" -ErrorAction SilentlyContinue
+        
+        if ($adapter) {
+            # Configure IP address on the host adapter
+            $natNetwork = "192.168.100.0/24"
+            $hostIP = "192.168.100.1"
+            
+            New-NetIPAddress -IPAddress $hostIP -PrefixLength 24 -InterfaceIndex $adapter.InterfaceIndex -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "  [OK] Host adapter configured: $hostIP" -ForegroundColor Green
+            
+            # Create NAT rule
+            $natName = "PackerNAT"
+            $existingNat = Get-NetNat -Name $natName -ErrorAction SilentlyContinue
+            if ($existingNat) {
+                Remove-NetNat -Name $natName -Confirm:$false
+            }
+            
+            New-NetNat -Name $natName -InternalIPInterfaceAddressPrefix $natNetwork | Out-Null
+            Write-Host "  [OK] NAT configured: $natNetwork" -ForegroundColor Green
+        } else {
+            Write-Warning "Could not find adapter for switch. NAT may not work properly."
+        }
+    } catch {
+        Write-Error "Failed to create Internal switch: $($_.Exception.Message)"
+        Write-Host "Available switches:"
+        Get-VMSwitch | ForEach-Object { Write-Host "  - $($_.Name) ($($_.SwitchType))" }
+        exit 1
+    }
+} else {
+    Write-Host "  [OK] Using existing switch: $($vmSwitch.Name) ($($vmSwitch.SwitchType))" -ForegroundColor Green
+    
+    # If it's an Internal switch, ensure NAT is configured
+    if ($vmSwitch.SwitchType -eq "Internal") {
+        $natName = "PackerNAT"
+        $existingNat = Get-NetNat -Name $natName -ErrorAction SilentlyContinue
+        if (-not $existingNat) {
+            Write-Host "  Configuring NAT for existing Internal switch..." -ForegroundColor Yellow
+            try {
+                $adapter = Get-NetAdapter -Name "*$SwitchName*" -ErrorAction SilentlyContinue
+                if ($adapter) {
+                    $natNetwork = "192.168.100.0/24"
+                    New-NetNat -Name $natName -InternalIPInterfaceAddressPrefix $natNetwork | Out-Null
+                    Write-Host "  [OK] NAT configured" -ForegroundColor Green
+                }
+            } catch {
+                Write-Warning "Could not configure NAT: $($_.Exception.Message)"
+            }
+        }
+    }
 }
 
-Write-Host "  [OK] Using switch: $($vmSwitch.Name)" -ForegroundColor Green
-
 # Prepare output
-Write-Host "`n2. Preparing output directory..." -ForegroundColor Yellow
+Write-Host "`n3. Preparing output directory..." -ForegroundColor Yellow
 
 if (Test-Path $outputPath) {
     if ($Force) {
@@ -111,7 +164,7 @@ New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
 Write-Host "  [OK] Output directory ready" -ForegroundColor Green
 
 # Create variables
-Write-Host "`n3. Creating variables..." -ForegroundColor Yellow
+Write-Host "`n4. Creating variables..." -ForegroundColor Yellow
 $variablesFile = Join-Path $scriptPath "simple-vars.pkrvars.hcl"
 $variablesContent = @"
 iso_path = "C:/ISOs/AlmaLinux-9-latest-x86_64-dvd.iso"
@@ -125,7 +178,7 @@ Set-Content -Path $variablesFile -Value $variablesContent -Encoding UTF8
 Write-Host "  [OK] Variables created" -ForegroundColor Green
 
 # Initialize Packer
-Write-Host "`n4. Initializing Packer..." -ForegroundColor Yellow
+Write-Host "`n5. Initializing Packer..." -ForegroundColor Yellow
 try {
     Set-Location $projectRoot
     & packer init $templatePath
@@ -139,7 +192,7 @@ try {
 }
 
 # Validate template
-Write-Host "`n5. Validating template..." -ForegroundColor Yellow
+Write-Host "`n6. Validating template..." -ForegroundColor Yellow
 try {
     & packer validate -var-file="$variablesFile" $templatePath
     if ($LASTEXITCODE -eq 0) {
@@ -153,7 +206,7 @@ try {
 }
 
 # Configure Windows Firewall for Packer HTTP server
-Write-Host "`n6. Configuring Windows Firewall..." -ForegroundColor Yellow
+Write-Host "`n7. Configuring Windows Firewall..." -ForegroundColor Yellow
 
 # Create firewall rule for Packer HTTP server (ports 8080-8090)
 $firewallRuleName = "Packer HTTP Server"
@@ -181,7 +234,7 @@ try {
 }
 
 # Start build
-Write-Host "`n7. Starting build..." -ForegroundColor Green
+Write-Host "`n8. Starting build..." -ForegroundColor Green
 Write-Host "This will take 15-30 minutes."
 Write-Host "Watch the VM console for network detection."
 Write-Host ""

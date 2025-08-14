@@ -15,7 +15,7 @@ variable "generation" {
 
 variable "switch_name" {
   type        = string
-  default     = "Default Switch"
+  default     = "PackerInternal"
   description = "Hyper-V switch to use"
 }
 
