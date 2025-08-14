@@ -431,14 +431,12 @@ try {
         Write-Host "  Long filenames detected - using ISO 9660 Level 2 with long name support"
     }
     
+    # For Gen 1, use minimal parameters to avoid checksum corruption
     if ($Generation -eq 1) {
-        # For Gen 1 VMs, use the most compatible settings for BIOS boot
+        # Minimal settings for Gen 1 BIOS boot - avoid complex features that can cause corruption
         $oscdimgArgs = @(
             "-m"                    # Ignore maximum image size limit
-            "-h"                    # Include hidden files  
         )
-        # Don't use -o (optimize) or -j2 (Joliet) for Gen 1 as they can cause boot issues
-        # Don't use -n (long names) for Gen 1 to maintain compatibility
     }
     elseif ($needsLongNames) {
         # Use ISO 9660 with long name support (no Joliet to avoid conflict)
@@ -447,15 +445,13 @@ try {
             "-m"                    # Ignore maximum image size limit
             "-h"                    # Include hidden files
             "-l"                    # Long file name support
-            "-o"                    # Optimize layout
         )
     } else {
-        # Use Joliet file system for better compatibility
+        # Use Joliet file system for better compatibility (Gen 2)
         $oscdimgArgs = @(
             "-j2"                   # Use Joliet file system level 2
             "-m"                    # Ignore maximum image size limit
             "-h"                    # Include hidden files
-            "-o"                    # Optimize layout
         )
     }
     
@@ -463,32 +459,47 @@ try {
     $hasBiosBooter = Test-Path "$extractDir\isolinux\isolinux.bin"
     $hasUefiBooter = Test-Path "$extractDir\EFI\BOOT\bootx64.efi"
     
+    # Handle boot files more carefully to avoid checksum corruption
     if ($hasBiosBooter -and $hasUefiBooter) {
-        # Hybrid BIOS/UEFI ISO - this is what we want for maximum compatibility
+        # Hybrid BIOS/UEFI ISO
         Write-Host "Creating hybrid BIOS/UEFI bootable ISO..."
         if ($Generation -eq 1) {
-            # For Gen 1 VMs, optimize for BIOS boot
-            $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
-            $oscdimgArgs += "-e`"$extractDir\isolinux\boot.cat`""  # -e creates new boot catalog
+            # For Gen 1, use the existing boot catalog instead of creating new one
+            # This prevents corruption of the boot structure
+            if (Test-Path "$extractDir\isolinux\boot.cat") {
+                Write-Host "  Using existing boot catalog to prevent corruption"
+                $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+            } else {
+                Write-Host "  Creating new boot catalog"
+                $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+                $oscdimgArgs += "-e`"$extractDir\isolinux\boot.cat`""
+            }
         } else {
-            # For Gen 2 VMs, standard hybrid approach
+            # For Gen 2 VMs, standard approach
             $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
-            $oscdimgArgs += "-c`"$extractDir\isolinux\boot.cat`""
+            if (Test-Path "$extractDir\isolinux\boot.cat") {
+                $oscdimgArgs += "-c`"$extractDir\isolinux\boot.cat`""
+            }
         }
-        # Note: oscdimg doesn't directly support dual boot like xorriso, but we include UEFI files
-        # The UEFI boot files will be present and should work when booted in UEFI mode
     }
     elseif ($hasBiosBooter) {
         # BIOS-only ISO
         Write-Host "Creating BIOS bootable ISO..."
         if ($Generation -eq 1) {
-            # For Gen 1 VMs, use more compatible BIOS boot options
-            $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
-            $oscdimgArgs += "-e`"$extractDir\isolinux\boot.cat`""  # -e creates new boot catalog
-            $oscdimgArgs += "-N"  # Do not use long filenames for better BIOS compatibility
+            # For Gen 1, preserve original boot structure
+            if (Test-Path "$extractDir\isolinux\boot.cat") {
+                Write-Host "  Using existing boot catalog to prevent corruption"
+                $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+            } else {
+                Write-Host "  Creating new boot catalog"
+                $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+                $oscdimgArgs += "-e`"$extractDir\isolinux\boot.cat`""
+            }
         } else {
             $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
-            $oscdimgArgs += "-c`"$extractDir\isolinux\boot.cat`""
+            if (Test-Path "$extractDir\isolinux\boot.cat") {
+                $oscdimgArgs += "-c`"$extractDir\isolinux\boot.cat`""
+            }
         }
     }
     elseif ($hasUefiBooter) {
