@@ -129,6 +129,35 @@ Write-Host "Creating Packer variables file..."
 $outputPathHCL = $OutputPath -replace '\\', '/'
 $tempPathHCL = "C:/Packer/Temp"
 
+# Get host IP address for Hyper-V Default Switch
+$hostIP = "192.168.1.1"  # Default for Hyper-V Default Switch
+try {
+    # Try to get the actual IP of the Default Switch
+    $switchInfo = Get-VMSwitch -Name "Default Switch" -ErrorAction SilentlyContinue
+    if ($switchInfo) {
+        # Get the host adapter IP for Default Switch
+        $netAdapter = Get-NetAdapter | Where-Object {$_.InterfaceDescription -match "Hyper-V" -and $_.InterfaceDescription -match "Default"}
+        if ($netAdapter) {
+            $ipConfig = Get-NetIPAddress -InterfaceIndex $netAdapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+            if ($ipConfig) {
+                $hostIP = $ipConfig.IPAddress
+                Write-Host "  Detected Hyper-V host IP: $hostIP" -ForegroundColor Green
+            }
+        }
+    }
+    
+    # Fallback: try to get any local IP that's not loopback
+    if ($hostIP -eq "192.168.1.1") {
+        $localIPs = Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notmatch "^127\.|^169\.254\."}
+        if ($localIPs) {
+            $hostIP = $localIPs[0].IPAddress
+            Write-Host "  Using fallback host IP: $hostIP" -ForegroundColor Yellow
+        }
+    }
+} catch {
+    Write-Warning "Could not detect host IP, using default: $hostIP"
+}
+
 $variablesContent = @"
 # Packer Variables for AlmaLinux Lab Template
 vm_name = "almalinux-lab-${KickstartVersion}-gen${Generation}"
@@ -137,6 +166,7 @@ vm_disk_size = 30720
 output_directory = "${outputPathHCL}"
 temp_path = "${tempPathHCL}"
 kickstart_version = "${KickstartVersion}"
+host_ip = "${hostIP}"
 iso_checksum = "file:https://repo.almalinux.org/almalinux/9/isos/x86_64/CHECKSUM"
 ssh_username = "root"
 ssh_password = "alma123!"

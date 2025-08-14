@@ -62,6 +62,11 @@ variable "kickstart_version" {
   default = "v2"
 }
 
+variable "host_ip" {
+  type    = string
+  default = "192.168.1.1"  # Will be overridden by script
+}
+
 # Sources
 source "hyperv-iso" "almalinux" {
   # VM Configuration
@@ -76,6 +81,8 @@ source "hyperv-iso" "almalinux" {
   
   # Network
   switch_name      = "Default Switch"
+  host_port_min    = 8080
+  host_port_max    = 8090
   
   # Temporary paths for Windows
   temp_path        = var.temp_path
@@ -89,8 +96,9 @@ source "hyperv-iso" "almalinux" {
   boot_wait        = "10s"
   boot_command     = [
     "<tab>",
-    " inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ks.cfg",
+    " inst.ks=http://${var.host_ip}:{{ .HTTPPort }}/ks.cfg",
     " inst.text console=tty0 console=ttyS0,115200",
+    " ip=dhcp",
     "<enter>"
   ]
   
