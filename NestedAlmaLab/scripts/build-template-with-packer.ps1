@@ -121,13 +121,17 @@ New-Item -ItemType Directory -Path $OutputPath, "C:\Packer\Temp" -Force | Out-Nu
 
 # Create variables file for this build
 Write-Host "Creating Packer variables file..."
+# Convert Windows paths to forward slashes for HCL
+$outputPathHCL = $OutputPath -replace '\\', '/'
+$tempPathHCL = "C:/Packer/Temp"
+
 $variablesContent = @"
 # Packer Variables for AlmaLinux Lab Template
 vm_name = "almalinux-lab-${KickstartVersion}-gen${Generation}"
 vm_memory = 2048
 vm_disk_size = 30720
-output_directory = "${OutputPath}"
-temp_path = "C:\\Packer\\Temp"
+output_directory = "${outputPathHCL}"
+temp_path = "${tempPathHCL}"
 ssh_username = "root"
 ssh_password = "alma123!"
 "@

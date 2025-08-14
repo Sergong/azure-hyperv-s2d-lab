@@ -39,12 +39,12 @@ variable "ssh_password" {
 
 variable "output_directory" {
   type    = string
-  default = "C:\\Packer\\Output"
+  default = "C:/Packer/Output"
 }
 
 variable "temp_path" {
   type    = string
-  default = "C:\\Packer\\Temp"
+  default = "C:/Packer/Temp"
 }
 
 # Sources
