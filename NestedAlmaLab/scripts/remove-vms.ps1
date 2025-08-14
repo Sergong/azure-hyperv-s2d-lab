@@ -169,7 +169,7 @@ function Remove-VMCompletely {
                 Write-Host "  Removing VM configuration..."
                 Remove-VM -Name $VMName -Force -ErrorAction Stop
                 $removed.VM = $true
-                Write-Host "  ✓ VM removed successfully" -ForegroundColor Green
+                Write-Host "  [OK] VM removed successfully" -ForegroundColor Green
             }
         } else {
             Write-Host "  VM not found in Hyper-V (may have been manually deleted)" -ForegroundColor Yellow
@@ -184,7 +184,7 @@ function Remove-VMCompletely {
             } else {
                 Remove-Item $vhdFile -Force -ErrorAction Stop
                 $removed.MainVHD = $true
-                Write-Host "  ✓ Main VHD removed: $vhdFile" -ForegroundColor Green
+                Write-Host "  [OK] Main VHD removed: $vhdFile" -ForegroundColor Green
             }
         } else {
             Write-Host "  Main VHD not found: $vhdFile" -ForegroundColor Yellow
@@ -204,7 +204,7 @@ function Remove-VMCompletely {
                 } else {
                     Remove-Item $ksFile -Force -ErrorAction Stop
                     $removed.KickstartMedia += $ksFile
-                    Write-Host "  ✓ Kickstart media removed: $ksFile" -ForegroundColor Green
+                    Write-Host "  [OK] Kickstart media removed: $ksFile" -ForegroundColor Green
                 }
             }
         }
@@ -220,18 +220,18 @@ function Remove-VMCompletely {
                 } else {
                     Remove-Item $vmSpecificPath -Force -ErrorAction Stop
                     $removed.VMDirectory = $true
-                    Write-Host "  ✓ Empty VM directory removed: $vmSpecificPath" -ForegroundColor Green
+                    Write-Host "  [OK] Empty VM directory removed: $vmSpecificPath" -ForegroundColor Green
                 }
             } else {
                 Write-Host "  VM directory not empty, keeping: $vmSpecificPath" -ForegroundColor Yellow
             }
         }
         
-        Write-Host "  ✓ $VMName cleanup completed successfully`n" -ForegroundColor Green
+        Write-Host "  [OK] $VMName cleanup completed successfully`n" -ForegroundColor Green
         return $removed
         
     } catch {
-        Write-Error "  ✗ Failed to remove VM $VMName : $($_.Exception.Message)"
+        Write-Error "  [FAIL] Failed to remove VM $VMName : $($_.Exception.Message)"
         Write-Host ""
         return $removed
     }

@@ -342,15 +342,17 @@ for ($i = 1; $i -le $vmCount; $i++) {
         # Attach storage
         Add-VMHardDiskDrive -VMName $vmName -Path $vhdFile -ErrorAction Stop
         
-        # Configure VM settings
-        if ($vmGeneration -eq 2) {
-            Set-VMFirmware -VMName $vmName -EnableSecureBoot Off -ErrorAction Stop
-        }
-        Set-VMProcessor -VMName $vmName -ExposeVirtualizationExtensions $true -ErrorAction Stop
-        
-        # Mount AlmaLinux ISO
+        # Mount AlmaLinux ISO first (before VM configuration)
         Write-Host "  Attaching AlmaLinux ISO"
         Add-VMDvdDrive -VMName $vmName -Path $isoPath -ErrorAction Stop
+        
+        # Configure VM settings
+        if ($vmGeneration -eq 2) {
+            # Disable Secure Boot for Linux compatibility
+            Set-VMFirmware -VMName $vmName -EnableSecureBoot Off -ErrorAction Stop
+            Write-Host "  Disabled Secure Boot for Linux compatibility"
+        }
+        Set-VMProcessor -VMName $vmName -ExposeVirtualizationExtensions $true -ErrorAction Stop
         
         # Only attach kickstart media if NOT using custom ISO
         if (-not $isCustomISO -and $kickstartMedia) {
@@ -366,9 +368,39 @@ for ($i = 1; $i -le $vmCount; $i++) {
         
         # Configure boot order and parameters
         if ($vmGeneration -eq 2) {
-            # For Generation 2 VMs, configure boot from DVD
-            $dvdDrive = Get-VMDvdDrive -VMName $vmName
+            # For Generation 2 VMs, configure UEFI boot settings
+            Write-Host "  Configuring UEFI boot settings..."
+            
+            # Get the DVD drive and set it as first boot device
+            $dvdDrive = Get-VMDvdDrive -VMName $vmName -ErrorAction Stop
+            if (-not $dvdDrive) {
+                throw "DVD drive not found on VM $vmName"
+            }
+            
+            # Set DVD as first boot device
             Set-VMFirmware -VMName $vmName -FirstBootDevice $dvdDrive -ErrorAction Stop
+            Write-Host "  Set DVD as first boot device"
+            
+            # Configure additional UEFI settings for better compatibility
+            try {
+                # Set boot order explicitly
+                $bootOrder = @()
+                $bootOrder += $dvdDrive  # DVD first
+                
+                # Add hard drives to boot order
+                $hardDrives = Get-VMHardDiskDrive -VMName $vmName
+                foreach ($hdd in $hardDrives) {
+                    $bootOrder += $hdd
+                }
+                
+                # Apply boot order
+                Set-VMFirmware -VMName $vmName -BootOrder $bootOrder -ErrorAction Stop
+                Write-Host "  Configured UEFI boot order: DVD, HDD(s)"
+                
+            } catch {
+                Write-Warning "  Could not set detailed boot order: $($_.Exception.Message)"
+                Write-Host "  Basic DVD boot should still work"
+            }
             
             if ($isCustomISO) {
                 # Custom ISO with embedded kickstart - fully automated
