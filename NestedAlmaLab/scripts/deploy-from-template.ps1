@@ -32,12 +32,20 @@ if ([string]::IsNullOrWhiteSpace($TemplatePath)) {
     $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
     $projectRoot = Split-Path -Parent $scriptPath
     
+    # Ensure projectRoot is a single string
+    if ($projectRoot -is [array]) {
+        $projectRoot = $projectRoot[0]
+    }
+    
+    Write-Host "Script path: $scriptPath" -ForegroundColor Gray
+    Write-Host "Project root: $projectRoot" -ForegroundColor Gray
+    
     # Look for common Packer output directories
     $possiblePaths = @(
-        Join-Path $projectRoot "output-almalinux-simple",
-        Join-Path $projectRoot "output-almalinux",
+        (Join-Path $projectRoot "output-almalinux-simple"),
+        (Join-Path $projectRoot "output-almalinux"),
         "C:\Packer\Output",
-        Join-Path $projectRoot "output"
+        (Join-Path $projectRoot "output")
     )
     
     foreach ($path in $possiblePaths) {
