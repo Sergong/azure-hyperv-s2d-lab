@@ -226,6 +226,27 @@ try {
     # Dismount the original ISO
     Dismount-DiskImage -ImagePath $originalISO
     
+    # Remove read-only attributes from extracted files (common issue with ISO files)
+    Write-Host "Removing read-only attributes from extracted files..."
+    try {
+        Get-ChildItem $extractDir -Recurse -File | ForEach-Object {
+            if ($_.IsReadOnly) {
+                $_.IsReadOnly = $false
+            }
+        }
+        Write-Host "  Read-only attributes removed successfully"
+    } catch {
+        Write-Warning "  Could not remove some read-only attributes: $($_.Exception.Message)"
+        Write-Host "  Attempting alternative method..."
+        # Alternative method using attrib command
+        try {
+            $attribResult = & attrib -R "$extractDir\*.*" /S /D 2>&1
+            Write-Host "  Alternative method completed"
+        } catch {
+            Write-Warning "  Alternative method also failed, continuing anyway..."
+        }
+    }
+    
     Write-Host "Copying kickstart file..."
     # Copy kickstart file to ISO root
     try {
@@ -267,6 +288,14 @@ try {
     $isolinuxCfg = Join-Path $extractDir "isolinux\isolinux.cfg"
     if (Test-Path $isolinuxCfg) {
         Write-Host "Modifying BIOS boot configuration..."
+        
+        # Ensure the file is not read-only before modifying
+        $cfgFile = Get-Item $isolinuxCfg
+        if ($cfgFile.IsReadOnly) {
+            $cfgFile.IsReadOnly = $false
+            Write-Host "  Removed read-only attribute from isolinux.cfg"
+        }
+        
         $content = Get-Content $isolinuxCfg
         
         # Find and modify boot entries - try multiple patterns
@@ -307,6 +336,14 @@ try {
     $grubCfg = Join-Path $extractDir "EFI\BOOT\grub.cfg"
     if (Test-Path $grubCfg) {
         Write-Host "Modifying UEFI boot configuration..."
+        
+        # Ensure the file is not read-only before modifying
+        $grubFile = Get-Item $grubCfg
+        if ($grubFile.IsReadOnly) {
+            $grubFile.IsReadOnly = $false
+            Write-Host "  Removed read-only attribute from grub.cfg"
+        }
+        
         $content = Get-Content $grubCfg
         
         # Find and modify the linux boot entries - try multiple patterns
@@ -344,6 +381,14 @@ try {
     $grubCfg2 = Join-Path $extractDir "boot\grub2\grub.cfg"
     if (Test-Path $grubCfg2) {
         Write-Host "Modifying additional GRUB configuration..."
+        
+        # Ensure the file is not read-only before modifying
+        $grub2File = Get-Item $grubCfg2
+        if ($grub2File.IsReadOnly) {
+            $grub2File.IsReadOnly = $false
+            Write-Host "  Removed read-only attribute from grub2.cfg"
+        }
+        
         $content = Get-Content $grubCfg2
         
         $modified2 = $false
