@@ -73,6 +73,7 @@ source "hyperv-iso" "almalinux" {
     " ip=dhcp",
     " biosdevname=0",
     " net.ifnames=0",
+    " rd.live.check=0",
     "<enter>"
   ]
   

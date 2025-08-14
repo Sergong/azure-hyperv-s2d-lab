@@ -152,8 +152,36 @@ try {
     exit 1
 }
 
+# Configure Windows Firewall for Packer HTTP server
+Write-Host "`n6. Configuring Windows Firewall..." -ForegroundColor Yellow
+
+# Create firewall rule for Packer HTTP server (ports 8080-8090)
+$firewallRuleName = "Packer HTTP Server"
+try {
+    # Remove existing rule if it exists
+    $existingRule = Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
+    if ($existingRule) {
+        Remove-NetFirewallRule -DisplayName $firewallRuleName
+        Write-Host "  [OK] Removed existing firewall rule" -ForegroundColor Green
+    }
+    
+    # Create new inbound rule
+    New-NetFirewallRule -DisplayName $firewallRuleName `
+                       -Direction Inbound `
+                       -Protocol TCP `
+                       -LocalPort 8080-8090 `
+                       -Action Allow `
+                       -Profile Any `
+                       -Description "Allow Packer HTTP server for kickstart files" | Out-Null
+    
+    Write-Host "  [OK] Firewall rule created for ports 8080-8090" -ForegroundColor Green
+} catch {
+    Write-Warning "Failed to configure firewall rule: $($_.Exception.Message)"
+    Write-Host "  [MANUAL] You may need to manually allow ports 8080-8090 in Windows Firewall" -ForegroundColor Yellow
+}
+
 # Start build
-Write-Host "`n6. Starting build..." -ForegroundColor Green
+Write-Host "`n7. Starting build..." -ForegroundColor Green
 Write-Host "This will take 15-30 minutes."
 Write-Host "Watch the VM console for network detection."
 Write-Host ""
