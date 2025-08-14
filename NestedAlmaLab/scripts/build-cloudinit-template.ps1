@@ -100,7 +100,14 @@ source "hyperv-iso" "almalinux-cloudinit" {
   # Boot configuration
   boot_wait = "10s"
   boot_command = [
-    "<tab> text inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ks-with-cloudinit.cfg<enter><wait>"
+    "<tab>",
+    " text",
+    " inst.ks=http://{{.HTTPIP}}:{{.HTTPPort}}/ks-with-cloudinit.cfg",
+    " ip=192.168.200.100::192.168.200.1:255.255.255.0:almavm:eth0:none:8.8.8.8",
+    " biosdevname=0",
+    " net.ifnames=0",
+    " rd.live.check=0",
+    "<enter>"
   ]
   
   # HTTP server for kickstart
