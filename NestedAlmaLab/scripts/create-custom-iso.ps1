@@ -221,7 +221,7 @@ try {
     $driveLetter = ($mountResult | Get-Volume).DriveLetter
     
     # Copy all files from ISO
-    robocopy "${driveLetter}:" $extractDir /E /NP /NJH /NJS | Out-Null
+    robocopy "${driveLetter}:\" $extractDir /E /NP /NJH /NJS | Out-Null
     
     # Dismount the original ISO
     Dismount-DiskImage -ImagePath $originalISO
@@ -468,17 +468,17 @@ try {
             # This prevents corruption of the boot structure
             if (Test-Path "$extractDir\isolinux\boot.cat") {
                 Write-Host "  Using existing boot catalog to prevent corruption"
-                $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+                $oscdimgArgs += "-b`"${extractDir}\isolinux\isolinux.bin`""
             } else {
                 Write-Host "  Creating new boot catalog"
                 $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
-                $oscdimgArgs += "-e`"$extractDir\isolinux\boot.cat`""
+                $oscdimgArgs += "-e`"${extractDir}\isolinux\boot.cat`""
             }
         } else {
             # For Gen 2 VMs, standard approach
-            $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+            $oscdimgArgs += "-b`"${extractDir}\isolinux\isolinux.bin`""
             if (Test-Path "$extractDir\isolinux\boot.cat") {
-                $oscdimgArgs += "-c`"$extractDir\isolinux\boot.cat`""
+                $oscdimgArgs += "-c`"${extractDir}\isolinux\boot.cat`""
             }
         }
     }
@@ -489,16 +489,16 @@ try {
             # For Gen 1, preserve original boot structure
             if (Test-Path "$extractDir\isolinux\boot.cat") {
                 Write-Host "  Using existing boot catalog to prevent corruption"
-                $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+                $oscdimgArgs += "-b`"${extractDir}\isolinux\isolinux.bin`""
             } else {
                 Write-Host "  Creating new boot catalog"
                 $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
-                $oscdimgArgs += "-e`"$extractDir\isolinux\boot.cat`""
+                $oscdimgArgs += "-e`"${extractDir}\isolinux\boot.cat`""
             }
         } else {
-            $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+            $oscdimgArgs += "-b`"${extractDir}\isolinux\isolinux.bin`""
             if (Test-Path "$extractDir\isolinux\boot.cat") {
-                $oscdimgArgs += "-c`"$extractDir\isolinux\boot.cat`""
+                $oscdimgArgs += "-c`"${extractDir}\isolinux\boot.cat`""
             }
         }
     }

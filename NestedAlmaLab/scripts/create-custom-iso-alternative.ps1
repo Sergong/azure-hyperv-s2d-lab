@@ -124,7 +124,7 @@ try {
         Write-Host "  Using mount/copy method"
         $mountResult = Mount-DiskImage -ImagePath $originalISO -PassThru
         $driveLetter = ($mountResult | Get-Volume).DriveLetter
-        robocopy "${driveLetter}:" $extractDir /E /NP /NJH /NJS | Out-Null
+        robocopy "${driveLetter}:\" $extractDir /E /NP /NJH /NJS | Out-Null
         Dismount-DiskImage -ImagePath $originalISO
     }
     
@@ -159,22 +159,22 @@ try {
     switch ($isoMethod) {
         "oscdimg_basic" {
             # Use absolute minimal oscdimg parameters
-            $args = @(
+            $oscdimgArgs = @(
                 "-m"                           # Ignore max size limit
-                "-b`"$extractDir\isolinux\isolinux.bin`""  # Boot sector
+                "-b`"${extractDir}\isolinux\isolinux.bin`""  # Boot sector
             )
             
             # Only add boot catalog if it exists
-            if (Test-Path "$extractDir\isolinux\boot.cat") {
+            if (Test-Path "${extractDir}\isolinux\boot.cat") {
                 # Don't recreate boot catalog - use existing one
                 Write-Host "  Using existing boot catalog (safer)"
             }
             
-            $args += $extractDir
-            $args += $customISO
+            $oscdimgArgs += $extractDir
+            $oscdimgArgs += $customISO
             
-            Write-Host "  Running: oscdimg $($args -join ' ')"
-            $result = & $isoTool @args 2>&1
+            Write-Host "  Running: oscdimg $($oscdimgArgs -join ' ')"
+            $result = & $isoTool @oscdimgArgs 2>&1
             
             if ($LASTEXITCODE -ne 0) {
                 throw "oscdimg failed: $result"
@@ -183,15 +183,15 @@ try {
         
         "poweriso" {
             # PowerISO command line
-            $args = @(
+            $powerISOArgs = @(
                 "create"
                 "-t:iso"
-                "-src:$extractDir"
-                "-dest:$customISO"
+                "-src:${extractDir}"
+                "-dest:${customISO}"
                 "-bootable"
             )
             
-            $result = & $isoTool @args 2>&1
+            $result = & $isoTool @powerISOArgs 2>&1
             if ($LASTEXITCODE -ne 0) {
                 throw "PowerISO failed: $result"
             }
