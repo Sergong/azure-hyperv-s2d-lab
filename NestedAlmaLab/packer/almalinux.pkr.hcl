@@ -32,9 +32,9 @@ variable "iso_url" {
   default = "https://repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9-latest-x86_64-minimal.iso"
 }
 
-variable "iso_checksum_url" {
+variable "iso_checksum" {
   type    = string
-  default = "https://repo.almalinux.org/almalinux/9/isos/x86_64/CHECKSUM"
+  default = "file:https://repo.almalinux.org/almalinux/9/isos/x86_64/CHECKSUM"
 }
 
 variable "ssh_username" {
@@ -71,9 +71,8 @@ source "hyperv-iso" "almalinux" {
   disk_size        = var.vm_disk_size
   
   # ISO Configuration
-  iso_url              = var.iso_url
-  iso_checksum_url     = var.iso_checksum_url
-  iso_checksum_type    = "sha256"
+  iso_url          = var.iso_url
+  iso_checksum     = var.iso_checksum
   
   # Network
   switch_name      = "Default Switch"

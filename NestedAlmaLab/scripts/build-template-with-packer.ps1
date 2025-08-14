@@ -133,6 +133,7 @@ vm_disk_size = 30720
 output_directory = "${outputPathHCL}"
 temp_path = "${tempPathHCL}"
 kickstart_version = "${KickstartVersion}"
+iso_checksum = "file:https://repo.almalinux.org/almalinux/9/isos/x86_64/CHECKSUM"
 ssh_username = "root"
 ssh_password = "alma123!"
 "@
