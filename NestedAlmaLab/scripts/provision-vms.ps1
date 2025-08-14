@@ -365,9 +365,18 @@ for ($i = 1; $i -le $vmCount; $i++) {
         # Attach storage
         Add-VMHardDiskDrive -VMName $vmName -Path $vhdFile -ErrorAction Stop
         
-        # Mount AlmaLinux ISO first (before VM configuration)
-        Write-Host "  Attaching AlmaLinux ISO"
-        Add-VMDvdDrive -VMName $vmName -Path $isoPath -ErrorAction Stop
+        # Check if VM already has a DVD drive, if so use it, otherwise add one
+        Write-Host "  Configuring ISO attachment"
+        $dvdDrive = Get-VMDvdDrive -VMName $vmName -ErrorAction SilentlyContinue
+        if ($dvdDrive) {
+            # Use existing DVD drive
+            Set-VMDvdDrive -VMName $vmName -ControllerNumber $dvdDrive.ControllerNumber -ControllerLocation $dvdDrive.ControllerLocation -Path $isoPath -ErrorAction Stop
+            Write-Host "  ISO attached to existing DVD drive"
+        } else {
+            # Add new DVD drive
+            Add-VMDvdDrive -VMName $vmName -Path $isoPath -ErrorAction Stop
+            Write-Host "  New DVD drive added with ISO"
+        }
         
         # Configure VM settings
         if ($vmGeneration -eq 2) {

@@ -87,9 +87,18 @@ for ($i = 1; $i -le $vmCount; $i++) {
         Write-Host "  3. Adding hard disk..."
         Add-VMHardDiskDrive -VMName $vmName -Path $vhdFile
         
-        # Step 4: Add DVD drive with ISO
-        Write-Host "  4. Adding DVD drive..."
-        Add-VMDvdDrive -VMName $vmName -Path $isoPath
+        # Step 4: Configure DVD drive with ISO
+        Write-Host "  4. Configuring DVD drive..."
+        $dvdDrive = Get-VMDvdDrive -VMName $vmName -ErrorAction SilentlyContinue
+        if ($dvdDrive) {
+            # Use existing DVD drive
+            Set-VMDvdDrive -VMName $vmName -ControllerNumber $dvdDrive.ControllerNumber -ControllerLocation $dvdDrive.ControllerLocation -Path $isoPath
+            Write-Host "    Using existing DVD drive"
+        } else {
+            # Add new DVD drive
+            Add-VMDvdDrive -VMName $vmName -Path $isoPath
+            Write-Host "    Added new DVD drive"
+        }
         
         # Step 5: Connect to network (if switch exists)
         Write-Host "  5. Configuring network..."

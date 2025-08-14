@@ -386,7 +386,16 @@ try {
         Write-Host "  Long filenames detected - using ISO 9660 Level 2 with long name support"
     }
     
-    if ($needsLongNames) {
+    if ($Generation -eq 1) {
+        # For Gen 1 VMs, use the most compatible settings for BIOS boot
+        $oscdimgArgs = @(
+            "-m"                    # Ignore maximum image size limit
+            "-h"                    # Include hidden files  
+        )
+        # Don't use -o (optimize) or -j2 (Joliet) for Gen 1 as they can cause boot issues
+        # Don't use -n (long names) for Gen 1 to maintain compatibility
+    }
+    elseif ($needsLongNames) {
         # Use ISO 9660 with long name support (no Joliet to avoid conflict)
         $oscdimgArgs = @(
             "-n"                    # Allow long file names
@@ -412,16 +421,30 @@ try {
     if ($hasBiosBooter -and $hasUefiBooter) {
         # Hybrid BIOS/UEFI ISO - this is what we want for maximum compatibility
         Write-Host "Creating hybrid BIOS/UEFI bootable ISO..."
-        $oscdimgArgs += "-b$extractDir\isolinux\isolinux.bin"
-        $oscdimgArgs += "-c$extractDir\isolinux\boot.cat"
+        if ($Generation -eq 1) {
+            # For Gen 1 VMs, optimize for BIOS boot
+            $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+            $oscdimgArgs += "-e`"$extractDir\isolinux\boot.cat`""  # -e creates new boot catalog
+        } else {
+            # For Gen 2 VMs, standard hybrid approach
+            $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+            $oscdimgArgs += "-c`"$extractDir\isolinux\boot.cat`""
+        }
         # Note: oscdimg doesn't directly support dual boot like xorriso, but we include UEFI files
         # The UEFI boot files will be present and should work when booted in UEFI mode
     }
     elseif ($hasBiosBooter) {
         # BIOS-only ISO
         Write-Host "Creating BIOS bootable ISO..."
-        $oscdimgArgs += "-b$extractDir\isolinux\isolinux.bin"
-        $oscdimgArgs += "-c$extractDir\isolinux\boot.cat"
+        if ($Generation -eq 1) {
+            # For Gen 1 VMs, use more compatible BIOS boot options
+            $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+            $oscdimgArgs += "-e`"$extractDir\isolinux\boot.cat`""  # -e creates new boot catalog
+            $oscdimgArgs += "-N"  # Do not use long filenames for better BIOS compatibility
+        } else {
+            $oscdimgArgs += "-b`"$extractDir\isolinux\isolinux.bin`""
+            $oscdimgArgs += "-c`"$extractDir\isolinux\boot.cat`""
+        }
     }
     elseif ($hasUefiBooter) {
         # UEFI-only ISO (less common for Linux distros)
