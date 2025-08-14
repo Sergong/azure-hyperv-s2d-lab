@@ -31,13 +31,13 @@ function Test-NetworkConnectivity {
     try {
         $result = Test-NetConnection -ComputerName $Target -Port 80 -InformationLevel Quiet -WarningAction SilentlyContinue
         if ($result) {
-            Write-Host "    [OK] $TestName: OK" -ForegroundColor Green
+            Write-Host "    [OK] ${TestName}: OK" -ForegroundColor Green
         } else {
-            Write-Host "    [FAIL] $TestName: Failed" -ForegroundColor Red
+            Write-Host "    [FAIL] ${TestName}: Failed" -ForegroundColor Red
         }
         return $result
     } catch {
-        Write-Host "    [ERROR] $TestName: Error - $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "    [ERROR] ${TestName}: Error - $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 }
