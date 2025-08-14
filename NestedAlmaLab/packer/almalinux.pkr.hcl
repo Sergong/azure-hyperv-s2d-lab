@@ -80,7 +80,7 @@ source "hyperv-iso" "almalinux" {
   iso_checksum     = var.iso_checksum
   
   # Network
-  switch_name      = "Default Switch"
+  switch_name      = "PackerExternal"
   
   # Temporary paths for Windows
   temp_path        = var.temp_path

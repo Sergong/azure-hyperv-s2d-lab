@@ -70,7 +70,7 @@ source "hyperv-iso" "almalinux" {
   iso_checksum     = var.iso_checksum
   
   # Network Configuration - Use External switch for better connectivity
-  switch_name      = "Default Switch"
+  switch_name      = "PackerExternal"
   enable_mac_spoofing = true
   enable_dynamic_memory = false
   
