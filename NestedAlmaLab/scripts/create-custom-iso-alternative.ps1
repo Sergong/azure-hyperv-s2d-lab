@@ -64,32 +64,36 @@ if (-not (Test-Path $kickstartFile)) {
     exit 1
 }
 
-# Try to find a suitable ISO creation tool
+# Try to find a suitable ISO creation tool (in order of preference)
 $isoTool = $null
 $isoMethod = $null
 
-# Method 1: Try oscdimg with very basic parameters
-$oscdimgPath = "${env:ProgramFiles(x86)}\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
-if (Test-Path $oscdimgPath) {
-    $isoTool = $oscdimgPath
-    $isoMethod = "oscdimg_basic"
-    Write-Host "Found oscdimg.exe - will use basic parameters"
-}
-
-# Method 2: Try PowerISO if available (commercial tool)
+# Method 1: Try PowerISO first (commercial tool - most reliable)
 $powerISOPath = "${env:ProgramFiles}\PowerISO\piso.exe"
 if (Test-Path $powerISOPath) {
     $isoTool = $powerISOPath
     $isoMethod = "poweriso"
-    Write-Host "Found PowerISO - will use that instead"
+    Write-Host "Found PowerISO - using preferred tool"
 }
 
-# Method 3: Try cdrtfe or other free tools (user needs to install)
-$cdrPath = "${env:ProgramFiles}\cdrtfe\cdrtfe.exe"
-if (Test-Path $cdrPath) {
-    $isoTool = $cdrPath
-    $isoMethod = "cdrtfe"
-    Write-Host "Found cdrtfe - will use that"
+# Method 2: Try cdrtfe (free tool - good alternative)
+if (-not $isoTool) {
+    $cdrPath = "${env:ProgramFiles}\cdrtfe\cdrtfe.exe"
+    if (Test-Path $cdrPath) {
+        $isoTool = $cdrPath
+        $isoMethod = "cdrtfe"
+        Write-Host "Found cdrtfe - using free alternative"
+    }
+}
+
+# Method 3: Fallback to oscdimg (Windows ADK - can be problematic)
+if (-not $isoTool) {
+    $oscdimgPath = "${env:ProgramFiles(x86)}\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
+    if (Test-Path $oscdimgPath) {
+        $isoTool = $oscdimgPath
+        $isoMethod = "oscdimg_basic"
+        Write-Host "Found oscdimg.exe - using as fallback (may have checksum issues)"
+    }
 }
 
 if (-not $isoTool) {
@@ -195,6 +199,13 @@ try {
             if ($LASTEXITCODE -ne 0) {
                 throw "PowerISO failed: $result"
             }
+        }
+        
+        "cdrtfe" {
+            # cdrtfe command line (note: cdrtfe is typically GUI-based, but has some CLI support)
+            Write-Host "  Note: cdrtfe is primarily a GUI tool. You may need to create the ISO manually."
+            Write-Host "  Alternatively, please install PowerISO or use oscdimg as fallback."
+            throw "cdrtfe CLI support is limited - please use PowerISO or oscdimg instead"
         }
         
         default {
