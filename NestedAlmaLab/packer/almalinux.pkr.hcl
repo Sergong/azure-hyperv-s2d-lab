@@ -22,9 +22,9 @@ variable "iso_url" {
   default = "https://repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9-latest-x86_64-minimal.iso"
 }
 
-variable "iso_checksum" {
+variable "iso_checksum_url" {
   type    = string
-  default = "sha256:b21c6edc1e12ee3e5ba57451e9a5a7ff91b0f30a5a9fe62bb3c8b9c4b8c0e50a"  # Update this with actual checksum
+  default = "https://repo.almalinux.org/almalinux/9/isos/x86_64/CHECKSUM"
 }
 
 variable "ssh_username" {
@@ -39,7 +39,12 @@ variable "ssh_password" {
 
 variable "output_directory" {
   type    = string
-  default = "output-hyperv"
+  default = "C:\\Packer\\Output"
+}
+
+variable "temp_path" {
+  type    = string
+  default = "C:\\Packer\\Temp"
 }
 
 # Sources
@@ -51,11 +56,15 @@ source "hyperv-iso" "almalinux" {
   disk_size        = var.vm_disk_size
   
   # ISO Configuration
-  iso_url          = var.iso_url
-  iso_checksum     = var.iso_checksum
+  iso_url              = var.iso_url
+  iso_checksum_url     = var.iso_checksum_url
+  iso_checksum_type    = "sha256"
   
   # Network
   switch_name      = "Default Switch"
+  
+  # Temporary paths for Windows
+  temp_path        = var.temp_path
   
   # SSH Configuration
   ssh_username     = var.ssh_username
@@ -72,7 +81,7 @@ source "hyperv-iso" "almalinux" {
   ]
   
   # HTTP server for kickstart
-  http_directory   = "../templates/AlmaLinux/v2"
+  http_directory   = "../templates/AlmaLinux/packer"
   http_port_min    = 8080
   http_port_max    = 8090
   
@@ -103,50 +112,95 @@ build {
   # System updates and basic configuration
   provisioner "shell" {
     inline = [
+      "echo 'Starting Packer provisioning...'",
       "dnf update -y",
       "dnf install -y epel-release",
-      "dnf install -y git vim-enhanced tmux htop wget curl net-tools bind-utils tcpdump python3 python3-pip"
+      "dnf install -y git vim-enhanced tmux htop tree wget curl net-tools bind-utils tcpdump nmap-ncat python3 python3-pip ansible-core"
     ]
   }
   
   # Install Docker
   provisioner "shell" {
     inline = [
+      "echo 'Installing Docker...'",
       "dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo",
-      "dnf install -y docker-ce docker-ce-cli containerd.io",
+      "dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin",
       "systemctl enable docker",
-      "usermod -aG docker root"
+      "systemctl start docker",
+      "usermod -aG docker root",
+      "usermod -aG docker labuser"
     ]
   }
   
-  # Configure SSH
+  # Install additional development tools
   provisioner "shell" {
     inline = [
-      "sed -i 's/#PermitRootLogin yes/PermitRootLogin yes/' /etc/ssh/sshd_config",
-      "sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config",
-      "systemctl restart sshd"
+      "echo 'Installing development tools...'",
+      "dnf groupinstall -y 'Development Tools'",
+      "dnf install -y nodejs npm golang rust cargo"
     ]
   }
   
-  # Create lab user
+  # Configure useful aliases and environment
   provisioner "shell" {
     inline = [
-      "useradd -m -s /bin/bash labuser",
-      "echo 'labuser:labpass123!' | chpasswd",
-      "usermod -aG wheel labuser",
-      "usermod -aG docker labuser",
-      "echo 'labuser ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/labuser"
+      "echo 'Setting up shell environment...'",
+      "cat > /etc/profile.d/lab_aliases.sh << 'EOF'",
+      "# Lab environment aliases",
+      "alias ll='ls -alF'",
+      "alias la='ls -A'",
+      "alias grep='grep --color=auto'",
+      "alias h='history'",
+      "alias c='clear'",
+      "alias ..='cd ..'",
+      "alias df='df -h'",
+      "alias free='free -h'",
+      "alias dps='docker ps'",
+      "alias di='docker images'",
+      "alias gs='git status'",
+      "alias gc='git commit'",
+      "alias gp='git push'",
+      "EOF",
+      "chmod +x /etc/profile.d/lab_aliases.sh"
     ]
   }
   
-  # Final cleanup and preparation
+  # Template cleanup and finalization
   provisioner "shell" {
     inline = [
+      "echo 'Finalizing template...'",
+      "# Create template MOTD",
+      "cat > /etc/motd << 'EOF'",
+      "===============================================",
+      "   AlmaLinux Lab Template (Packer-built)",
+      "===============================================",
+      "Template includes:",
+      "- AlmaLinux 9 with latest updates",
+      "- Docker + Docker Compose",
+      "- Development tools (git, vim, python3, nodejs, go, rust)",
+      "- Ansible core",
+      "- SSH configured for lab access",
+      "",
+      "Default accounts:",
+      "- root (password: alma123!)",
+      "- labuser (password: labpass123!)",
+      "",
+      "Ready for nested virtualization labs!",
+      "===============================================",
+      "EOF",
+      "",
+      "# Final cleanup",
       "dnf clean all",
       "rm -rf /tmp/*",
       "rm -rf /var/tmp/*",
-      "history -c",
-      "echo 'AlmaLinux Lab Template - Ready for deployment' > /etc/motd"
+      "# Clear histories",
+      "> ~/.bash_history",
+      "> /home/labuser/.bash_history || true",
+      "# Prepare for template deployment",
+      "> /etc/machine-id",
+      "rm -f /etc/ssh/ssh_host_*",
+      "touch /etc/packer-template-ready",
+      "echo 'Template preparation completed'"
     ]
   }
   
