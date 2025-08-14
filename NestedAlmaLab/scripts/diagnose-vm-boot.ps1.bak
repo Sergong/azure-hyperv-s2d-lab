@@ -280,7 +280,7 @@ function Test-VMBootConfiguration {
         
         Write-Host "`nRecommendations:" -ForegroundColor Yellow
         foreach ($rec in $recommendations) {
-            Write-Host "  * $rec" -ForegroundColor Cyan
+            Write-Host "  • $rec" -ForegroundColor Cyan
         }
     }
     
