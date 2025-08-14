@@ -1,5 +1,5 @@
-# Simple AlmaLinux Hyper-V Template Build - FIXED VERSION
-# This script resolves networking issues when building in Azure VMs
+# AlmaLinux Hyper-V Template Build with Static IP
+# For Azure nested VM environments - no DHCP server required
 
 param(
     [Parameter(Mandatory=$false)]
@@ -23,9 +23,10 @@ if (-not $isAdmin) {
     exit 1
 }
 
-Write-Host "=== AlmaLinux Template Build (Fixed Networking) ===" -ForegroundColor Cyan
+Write-Host "=== AlmaLinux Template Build (Static IP) ===" -ForegroundColor Cyan
 Write-Host "Generation: $Generation"
 Write-Host "Switch: $SwitchName"
+Write-Host "Network: 192.168.200.0/24 (Static IP)"
 Write-Host "======================================="
 
 # Set paths
@@ -34,6 +35,11 @@ $projectRoot = Split-Path -Parent $scriptPath
 $templatePath = Join-Path $projectRoot "templates/almalinux-simple.pkr.hcl"
 $kickstartPath = Join-Path $projectRoot "templates/AlmaLinux/hyperv/ks.cfg"
 $outputPath = Join-Path $projectRoot "output-almalinux-simple"
+
+# Network configuration
+$natNetwork = "192.168.200.0/24"
+$hostIP = "192.168.200.1"
+$natName = "PackerNAT200"
 
 # Check prerequisites
 Write-Host "`n1. Checking prerequisites..." -ForegroundColor Yellow
@@ -51,7 +57,7 @@ try {
     exit 1
 }
 
-# Check if we can list VM switches (basic Hyper-V check)
+# Check Hyper-V
 try {
     $switches = Get-VMSwitch -ErrorAction SilentlyContinue
     Write-Host "  [OK] Hyper-V is functional" -ForegroundColor Green
@@ -83,109 +89,115 @@ $isoSize = (Get-Item $isoPath).Length / 1MB
 Write-Host "  [OK] Template files found" -ForegroundColor Green
 Write-Host "  [OK] ISO file found: $isoPath ($([math]::Round($isoSize, 1)) MB)" -ForegroundColor Green
 
-# Check/Create Internal switch with NAT (for Azure environments without DHCP)
+# Configure network switch with static IP
 Write-Host "`n2. Configuring network switch..." -ForegroundColor Yellow
 
-# *** NETWORK CONFIGURATION FIX ***
-# Use unique IP range to avoid conflicts with existing switches
-$natNetwork = "192.168.200.0/24"
-$hostIP = "192.168.200.1"
-$natName = "PackerNAT200"
-
-# Step 1: Clean up existing resources first
-# Remove any existing NAT rule with this name
+# Clean up any existing NAT rules with our name
 $existingNat = Get-NetNat -Name $natName -ErrorAction SilentlyContinue
 if ($existingNat) {
     Write-Host "  Removing existing NAT rule '$natName'..." -ForegroundColor Yellow
     Remove-NetNat -Name $natName -Confirm:$false
 }
 
-# Create or reuse switch
+# Create or get the VM switch
 $vmSwitch = Get-VMSwitch -Name $SwitchName -ErrorAction SilentlyContinue
 if (-not $vmSwitch) {
     Write-Host "  Creating Internal switch '$SwitchName'..." -ForegroundColor Yellow
     try {
         New-VMSwitch -Name $SwitchName -SwitchType Internal | Out-Null
         Write-Host "  [OK] Internal switch created" -ForegroundColor Green
-        # Wait for switch to be fully created
-        Start-Sleep 5  # Give it extra time to fully initialize
+        Start-Sleep 5  # Wait for switch to be fully created
     } catch {
         Write-Error "Failed to create Internal switch: $($_.Exception.Message)"
-        Write-Host "Available switches:"
-        Get-VMSwitch | ForEach-Object { Write-Host "  - $($_.Name) ($($_.SwitchType))" }
         exit 1
     }
 } else {
-    Write-Host "  [OK] Using existing switch: $($vmSwitch.Name) ($($vmSwitch.SwitchType))" -ForegroundColor Green
+    Write-Host "  [OK] Using existing switch: $($vmSwitch.Name)" -ForegroundColor Green
 }
 
-# Step 2: Find and configure the vNIC created for the switch
+# Find the network adapter for this switch
 Write-Host "  Configuring virtual network adapter..." -ForegroundColor Yellow
-$adapter = Get-NetAdapter -Name "vEthernet*" | Where-Object { $_.InterfaceDescription -like "*$SwitchName*" } -ErrorAction SilentlyContinue
-if (-not $adapter) {
-    $adapter = Get-NetAdapter -Name "*$SwitchName*" -ErrorAction SilentlyContinue
-}
+$adapter = Get-NetAdapter | Where-Object { 
+    $_.Name -like "*$SwitchName*" -or 
+    $_.InterfaceDescription -like "*$SwitchName*" -or
+    ($_.Name -like "vEthernet*" -and $_.InterfaceDescription -like "*Hyper-V*")
+} | Sort-Object Name | Select-Object -First 1
 
 if (-not $adapter) {
     Write-Error "Could not find network adapter for switch '$SwitchName'"
     Write-Host "Available adapters:"
-    Get-NetAdapter | Format-Table Name, InterfaceDescription, Status
+    Get-NetAdapter | Format-Table Name, InterfaceDescription, Status -AutoSize
     exit 1
 }
 
-# Display adapter info
 Write-Host "  Using adapter: $($adapter.Name) (Index: $($adapter.InterfaceIndex))" -ForegroundColor Green
 
-# Step 3: Remove all existing IP configurations from the adapter except APIPA
+# Remove existing IP configurations from this adapter
+Write-Host "  Cleaning existing IP configurations..." -ForegroundColor Yellow
 $existingIPs = Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
 foreach ($ip in $existingIPs) {
-    if ($ip.IPAddress -notlike "169.254.*") {  # Skip APIPA addresses
-        Write-Host "  Removing IP address: $($ip.IPAddress)" -ForegroundColor Yellow
+    if ($ip.IPAddress -notlike "169.254.*" -and $ip.IPAddress -ne "127.0.0.1") {
         Remove-NetIPAddress -IPAddress $ip.IPAddress -InterfaceIndex $adapter.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
     }
 }
 
-# Clear any existing gateways on this adapter
+# Remove existing routes
 Remove-NetRoute -InterfaceIndex $adapter.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
 
-# Step 4: Add the new IP configuration
+# Configure the static IP
 try {
     New-NetIPAddress -IPAddress $hostIP -PrefixLength 24 -InterfaceIndex $adapter.InterfaceIndex | Out-Null
     Write-Host "  [OK] Host adapter configured with IP: $hostIP" -ForegroundColor Green
 } catch {
-    Write-Warning "Failed to set IP address: $($_.Exception.Message). Trying alternative method..."
-    # Try another approach
-    $interfaceAlias = $adapter.InterfaceAlias
-    & netsh interface ipv4 set address name="$interfaceAlias" static $hostIP 255.255.255.0
+    if ($_.Exception.Message -like "*already exists*") {
+        Write-Host "  [OK] IP address already configured: $hostIP" -ForegroundColor Green
+    } else {
+        Write-Error "Failed to configure IP address: $($_.Exception.Message)"
+        exit 1
+    }
 }
 
-# Step 5: Create the NAT rule
+# Create NAT rule
 try {
     New-NetNat -Name $natName -InternalIPInterfaceAddressPrefix $natNetwork | Out-Null
     Write-Host "  [OK] NAT configured: $natNetwork" -ForegroundColor Green
 } catch {
-    Write-Error "Failed to configure NAT: $($_.Exception.Message)"
-    exit 1
+    if ($_.Exception.Message -like "*already exists*") {
+        Write-Host "  [OK] NAT rule already exists: $natName" -ForegroundColor Green
+    } else {
+        Write-Error "Failed to configure NAT: $($_.Exception.Message)"
+        exit 1
+    }
 }
 
-# Step 6: Verify the configuration
+# Verify network configuration
+Write-Host "`n3. Verifying network configuration..." -ForegroundColor Yellow
 Start-Sleep 3
+
 $verifyIP = Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 | Where-Object { $_.IPAddress -eq $hostIP }
 if ($verifyIP) {
-    Write-Host "  [OK] Network configuration verified: $($verifyIP.IPAddress)" -ForegroundColor Green
+    Write-Host "  [OK] Host IP verified: $($verifyIP.IPAddress)" -ForegroundColor Green
 } else {
-    Write-Warning "Could not verify network configuration. Current IP configuration:"
-    Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 | Format-Table IPAddress, PrefixLength
+    Write-Warning "Could not verify host IP configuration"
+    Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 | Format-Table IPAddress, PrefixLength -AutoSize
 }
 
-# Print all network configurations for diagnostics
-Write-Host "Current Network Configuration:" -ForegroundColor Cyan
-Get-NetIPAddress -AddressFamily IPv4 | 
-    Where-Object { $_.InterfaceAlias -like "*Ethernet*" -or $_.InterfaceAlias -like "*vEthernet*" } | 
-    Format-Table IPAddress, InterfaceAlias, InterfaceIndex
+$verifyNat = Get-NetNat -Name $natName -ErrorAction SilentlyContinue
+if ($verifyNat) {
+    Write-Host "  [OK] NAT rule verified: $($verifyNat.InternalIPInterfaceAddressPrefix)" -ForegroundColor Green
+} else {
+    Write-Warning "Could not verify NAT configuration"
+}
+
+# Display current network state
+Write-Host "`n4. Current Network Configuration:" -ForegroundColor Cyan
+Write-Host "  VM will use static IP: 192.168.200.100"
+Write-Host "  Host IP (for HTTP server): $hostIP"
+Write-Host "  Gateway: $hostIP"
+Write-Host "  DNS: 8.8.8.8"
 
 # Prepare output
-Write-Host "`n3. Preparing output directory..." -ForegroundColor Yellow
+Write-Host "`n5. Preparing output directory..." -ForegroundColor Yellow
 
 if (Test-Path $outputPath) {
     if ($Force) {
@@ -201,7 +213,7 @@ New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
 Write-Host "  [OK] Output directory ready" -ForegroundColor Green
 
 # Create variables
-Write-Host "`n4. Creating variables..." -ForegroundColor Yellow
+Write-Host "`n6. Creating variables..." -ForegroundColor Yellow
 $variablesFile = Join-Path $scriptPath "simple-vars.pkrvars.hcl"
 $variablesContent = @"
 iso_path = "C:/ISOs/AlmaLinux-9-latest-x86_64-dvd.iso"
@@ -215,7 +227,7 @@ Set-Content -Path $variablesFile -Value $variablesContent -Encoding UTF8
 Write-Host "  [OK] Variables created" -ForegroundColor Green
 
 # Initialize Packer
-Write-Host "`n5. Initializing Packer..." -ForegroundColor Yellow
+Write-Host "`n7. Initializing Packer..." -ForegroundColor Yellow
 try {
     Set-Location $projectRoot
     & packer init $templatePath
@@ -229,7 +241,7 @@ try {
 }
 
 # Validate template
-Write-Host "`n6. Validating template..." -ForegroundColor Yellow
+Write-Host "`n8. Validating template..." -ForegroundColor Yellow
 try {
     & packer validate -var-file="$variablesFile" $templatePath
     if ($LASTEXITCODE -eq 0) {
@@ -242,20 +254,15 @@ try {
     exit 1
 }
 
-# Configure Windows Firewall for Packer HTTP server
-Write-Host "`n7. Configuring Windows Firewall..." -ForegroundColor Yellow
-
-# Create firewall rule for Packer HTTP server (ports 8080-8090)
+# Configure Windows Firewall
+Write-Host "`n9. Configuring Windows Firewall..." -ForegroundColor Yellow
 $firewallRuleName = "Packer HTTP Server"
 try {
-    # Remove existing rule if it exists
     $existingRule = Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
     if ($existingRule) {
         Remove-NetFirewallRule -DisplayName $firewallRuleName
-        Write-Host "  [OK] Removed existing firewall rule" -ForegroundColor Green
     }
     
-    # Create new inbound rule
     New-NetFirewallRule -DisplayName $firewallRuleName `
                        -Direction Inbound `
                        -Protocol TCP `
@@ -267,13 +274,16 @@ try {
     Write-Host "  [OK] Firewall rule created for ports 8080-8090" -ForegroundColor Green
 } catch {
     Write-Warning "Failed to configure firewall rule: $($_.Exception.Message)"
-    Write-Host "  [MANUAL] You may need to manually allow ports 8080-8090 in Windows Firewall" -ForegroundColor Yellow
 }
 
 # Start build
-Write-Host "`n8. Starting build..." -ForegroundColor Green
+Write-Host "`n10. Starting build..." -ForegroundColor Green
+Write-Host "Configuration:"
+Write-Host "  - VM will use static IP: 192.168.200.100"
+Write-Host "  - Host HTTP server will be accessible at: $hostIP:8080-8090"
+Write-Host "  - No DHCP server required"
+Write-Host ""
 Write-Host "This will take 15-30 minutes."
-Write-Host "Watch the VM console for network detection."
 Write-Host ""
 
 try {
@@ -282,6 +292,11 @@ try {
     if ($LASTEXITCODE -eq 0) {
         Write-Host "`n[SUCCESS] Template built successfully!" -ForegroundColor Green
         Write-Host "Location: $outputPath"
+        Write-Host ""
+        Write-Host "Network configuration used:"
+        Write-Host "  VM IP: 192.168.200.100"
+        Write-Host "  Host IP: $hostIP"
+        Write-Host "  Gateway: $hostIP"
     } else {
         Write-Host "`n[FAILED] Build failed" -ForegroundColor Red
         exit 1

@@ -70,7 +70,7 @@ source "hyperv-iso" "almalinux" {
     "<tab>",
     " text",
     " inst.ks=http://{{.HTTPIP}}:{{.HTTPPort}}/AlmaLinux/hyperv/ks.cfg",
-    " ip=dhcp",
+    " ip=192.168.200.100::192.168.200.1:255.255.255.0:almavm:eth0:none:8.8.8.8",
     " biosdevname=0",
     " net.ifnames=0",
     " rd.live.check=0",
