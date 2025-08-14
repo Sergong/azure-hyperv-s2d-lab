@@ -132,7 +132,7 @@ build {
   
   provisioner "shell" {
     inline = [
-      "echo 'Template build started at \$(date)' >> /var/log/packer-build.log",
+      "echo 'Template build started at '\$\$(date) >> /var/log/packer-build.log",
       
       # Verify cloud-init installation
       "echo 'Verifying cloud-init installation...' >> /var/log/packer-build.log",
@@ -174,7 +174,7 @@ build {
       "touch /etc/cloud/cloud-init.disabled",
       "rm -f /etc/cloud/cloud-init.disabled",
       
-      "echo 'Cloud-init template build completed at \$(date)' >> /var/log/packer-build.log"
+      "echo 'Cloud-init template build completed at '\$\$(date) >> /var/log/packer-build.log"
     ]
   }
   
