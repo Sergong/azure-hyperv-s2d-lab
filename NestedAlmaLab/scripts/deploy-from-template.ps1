@@ -50,12 +50,22 @@ if ([string]::IsNullOrWhiteSpace($TemplatePath)) {
     
     foreach ($path in $possiblePaths) {
         if (Test-Path $path) {
-            $vhdxFiles = Get-ChildItem "$path\*.vhdx" -ErrorAction SilentlyContinue
-            if ($vhdxFiles) {
-                $TemplatePath = $path
-                Write-Host "Auto-detected template path: $TemplatePath" -ForegroundColor Green
-                break
+            # Check both the main directory and Virtual Hard Disks subdirectory
+            $vhdxSearchLocations = @(
+                "$path\Virtual Hard Disks\*.vhdx",
+                "$path\*.vhdx"
+            )
+            
+            foreach ($searchLocation in $vhdxSearchLocations) {
+                $vhdxFiles = Get-ChildItem $searchLocation -ErrorAction SilentlyContinue
+                if ($vhdxFiles) {
+                    $TemplatePath = $path
+                    Write-Host "Auto-detected template path: $TemplatePath" -ForegroundColor Green
+                    break
+                }
             }
+            
+            if ($TemplatePath) { break }
         }
     }
     
@@ -76,11 +86,29 @@ Write-Host "VM Prefix: $VMPrefix"
 Write-Host "Memory per VM: $($Memory/1GB) GB"
 Write-Host "=================================="
 
-# Find the template VHDX file
-$templateFiles = Get-ChildItem "$TemplatePath\*.vhdx" | Sort-Object LastWriteTime -Descending
+# Find the template VHDX file - Packer puts them in "Virtual Hard Disks" subdirectory
+$vhdxSearchPaths = @(
+    "$TemplatePath\Virtual Hard Disks\*.vhdx",
+    "$TemplatePath\*.vhdx"
+)
+
+$templateFiles = @()
+foreach ($searchPath in $vhdxSearchPaths) {
+    $foundFiles = Get-ChildItem $searchPath -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+    if ($foundFiles) {
+        $templateFiles = $foundFiles
+        Write-Host "Found template files in: $(Split-Path $searchPath -Parent)" -ForegroundColor Gray
+        break
+    }
+}
+
 if (-not $templateFiles) {
     Write-Error "No template VHDX files found in $TemplatePath"
-    Write-Host "Run build-template-with-packer.ps1 first to create a template."
+    Write-Host "Searched in:"
+    foreach ($searchPath in $vhdxSearchPaths) {
+        Write-Host "  - $(Split-Path $searchPath -Parent)"
+    }
+    Write-Host "Run build-static-ip.ps1 first to create a template."
     exit 1
 }
 
