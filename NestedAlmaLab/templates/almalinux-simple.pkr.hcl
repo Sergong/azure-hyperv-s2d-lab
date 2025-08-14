@@ -31,9 +31,15 @@ variable "vm_name" {
   description = "Name of the VM template"
 }
 
+variable "iso_path" {
+  type        = string
+  default     = "C:/ISOs/AlmaLinux-9-latest-x86_64-dvd.iso"
+  description = "Path to AlmaLinux ISO file"
+}
+
 source "hyperv-iso" "almalinux" {
   # ISO Configuration - Using local ISO file
-  iso_paths    = ["C:/ISOs/AlmaLinux-9-latest-x86_64-dvd.iso"]
+  iso_url      = var.iso_path
   iso_checksum = "none"  # Skip checksum verification
   
   # VM Configuration
