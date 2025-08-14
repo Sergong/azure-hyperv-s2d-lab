@@ -115,8 +115,12 @@ if (-not (Test-Path $templateFile)) {
     exit 1
 }
 
-# Create output directories
+# Create output directories and clean up if needed
 Write-Host "Setting up directories..."
+if ($Force -and (Test-Path $OutputPath)) {
+    Write-Host "  Force flag specified - cleaning up existing output directory..." -ForegroundColor Yellow
+    Remove-Item $OutputPath -Recurse -Force -ErrorAction SilentlyContinue
+}
 New-Item -ItemType Directory -Path $OutputPath, "C:\Packer\Temp" -Force | Out-Null
 
 # Create variables file for this build
@@ -198,13 +202,23 @@ try {
     }
     Write-Host "  Template validation successful" -ForegroundColor Green
     
+    # Clean up any previous build artifacts for this specific template
+    $vmTemplateName = "almalinux-lab-${KickstartVersion}-gen${Generation}"
+    $existingArtifacts = Get-ChildItem $OutputPath -Filter "*${vmTemplateName}*" -ErrorAction SilentlyContinue
+    if ($existingArtifacts) {
+        Write-Host "Cleaning up previous build artifacts for ${vmTemplateName}..." -ForegroundColor Yellow
+        foreach ($artifact in $existingArtifacts) {
+            Remove-Item $artifact.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    
     # Build template
     Write-Host "Starting Packer build..." -ForegroundColor Yellow
     Write-Host "  You can monitor progress in Hyper-V Manager"
     Write-Host "  Look for VM: almalinux-lab-${KickstartVersion}-gen${Generation}"
     Write-Host ""
     
-    & packer build -var-file="$variablesFile" "$templateFile"
+    & packer build -force -var-file="$variablesFile" "$templateFile"
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host "`n=== Build Completed Successfully! ===" -ForegroundColor Green
