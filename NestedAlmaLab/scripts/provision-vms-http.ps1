@@ -215,7 +215,7 @@ Write-Host "4. VMs will reboot and be ready for SSH access"
 Write-Host "`n=== Alternative: Use Packer for Fully Automated Build ===" -ForegroundColor Magenta
 Write-Host "For a completely automated approach, consider using Packer:"
 Write-Host "1. Install Packer: winget install Packer"
-Write-Host "2. Run: packer build NestedAlmaLab/packer/almalinux.pkr.hcl"
+Write-Host "2. Run: .\scripts\build-static-ip.ps1 -Generation 1 -Force"
 Write-Host "3. Import the resulting VHDX as a template"
 
 Write-Host "`nProvisioning completed at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
