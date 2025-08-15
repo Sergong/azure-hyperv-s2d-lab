@@ -171,7 +171,7 @@ local-hostname: $VMName
     $userData = @"
 #cloud-config
 
-# Force cloud-init to run
+# CRITICAL: Must include all three module phases for proper execution
 cloud_init_modules:
   - migrator
   - seed_random
@@ -184,6 +184,21 @@ cloud_init_modules:
   - update_etc_hosts
   - users-groups
   - ssh
+
+cloud_config_modules:
+  - runcmd
+  - ssh-import-id
+  - locale
+  - set-passwords
+  - package-update-upgrade-install
+
+cloud_final_modules:
+  - scripts-user
+  - ssh-authkey-fingerprints
+  - keys-to-console
+  - phone-home
+  - final-message
+  - power-state-change
 
 # Set hostname
 hostname: $VMName
