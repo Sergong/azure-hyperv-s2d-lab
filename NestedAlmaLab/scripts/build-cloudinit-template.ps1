@@ -179,9 +179,38 @@ build {
       # Clear network configuration that might conflict
       "rm -f /etc/NetworkManager/system-connections/Wired*",
       
-      # Ensure cloud-init will run on first boot - do NOT create disabled files
+      # CRITICAL: Ensure cloud-init will run on first boot
+      "echo 'Creating bulletproof cloud-init configuration...' >> /var/log/packer-build.log",
+      
+      # Remove any disable files that might exist
       "rm -f /etc/cloud/cloud-init.disabled /run/cloud-init/disabled /var/lib/cloud/data/disabled",
+      
+      # Force enable all cloud-init services
       "systemctl enable cloud-init-local cloud-init cloud-config cloud-final",
+      
+      # CRITICAL: Create ds-identify.cfg to prevent systemd generator from disabling cloud-init
+      "cat > /etc/cloud/ds-identify.cfg << 'DSEOF'",
+      "# Force cloud-init to ALWAYS enable - prevents systemd generator from disabling",
+      "policy: enabled",
+      "DSEOF",
+      
+      # CRITICAL: Ensure NoCloud datasource configuration exists
+      "cat > /etc/cloud/cloud.cfg.d/90_nocloud_forced.cfg << 'NOCLOUDEOF'",
+      "# Force NoCloud datasource to be available",
+      "datasource_list: [ NoCloud, None ]",
+      "datasource:",
+      "  NoCloud:",
+      "    # Look for seed data on CD-ROM",
+      "    fs_label: CD_ROM",
+      "    # Fallback locations",
+      "    seedfrom: file:///dev/sr0",
+      "NOCLOUDEOF",
+      
+      # Verify the configuration was created properly
+      "echo 'Verifying cloud-init configuration...' >> /var/log/packer-build.log",
+      "ls -la /etc/cloud/ds-identify.cfg >> /var/log/packer-build.log",
+      "cat /etc/cloud/ds-identify.cfg >> /var/log/packer-build.log",
+      "ls -la /etc/cloud/cloud.cfg.d/90_nocloud_forced.cfg >> /var/log/packer-build.log",
       
       "echo 'Cloud-init template build completed' >> /var/log/packer-build.log"
     ]
