@@ -404,7 +404,12 @@ try {
             Write-Host "Attempting to fix template..." -ForegroundColor Yellow
             
             # Emergency fix - append build block if missing
-            $fixedBuildSection = ($buildSection -replace "SOURCENAME", $($Generation -eq 1 ? "almalinux-cloudinit-gen1" : "almalinux-cloudinit-gen2"))
+            if ($Generation -eq 1) {
+                $sourceName = "almalinux-cloudinit-gen1"
+            } else {
+                $sourceName = "almalinux-cloudinit-gen2"
+            }
+            $fixedBuildSection = ($buildSection -replace "SOURCENAME", $sourceName)
             Add-Content -Path $templatePath -Value $fixedBuildSection
             Write-Host "Build section added to template." -ForegroundColor Green
         }
