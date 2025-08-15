@@ -222,16 +222,16 @@ disable_root: False
 
 # Write network configuration files - force new IP configuration
 write_files:
-  - path: /etc/NetworkManager/system-connections/eth0.nmconnection
+  - path: /etc/NetworkManager/system-connections/cloudinit-eth0.nmconnection
     permissions: '0600'
     owner: root:root
     content: |
       [connection]
-      id=eth0
+      id=cloudinit-eth0
       type=ethernet
       interface-name=eth0
       autoconnect=true
-      autoconnect-priority=100
+      autoconnect-priority=999
       
       [ipv4]
       method=manual
@@ -293,6 +293,9 @@ bootcmd:
   - echo "Starting cloud-init configuration for $VMName" >> /var/log/cloud-init-debug.log
   - systemctl enable cloud-init-local cloud-init cloud-config cloud-final
   - systemctl daemon-reload
+  # Clean up conflicting network connections early
+  - nmcli connection delete "System eth0" || true
+  - nmcli connection delete "Wired connection 1" || true
 
 runcmd:
   - echo "Running cloud-init commands for $VMName" >> /var/log/cloud-init-debug.log
@@ -300,20 +303,19 @@ runcmd:
   - nmcli connection delete eth0 || true
   - nmcli connection delete "System eth0" || true
   - nmcli connection delete "Wired connection 1" || true
-  # Reload network configuration
+  # Reload network configuration to pick up new connection file
   - systemctl reload NetworkManager
   - nmcli connection reload
   - sleep 5
-  # Bring up the new eth0 connection
-  - nmcli connection up eth0 || true
-  # Force network restart if needed
-  - systemctl restart network || true
-  - systemctl restart NetworkManager || true
+  # List connections to debug
+  - nmcli connection show >> /var/log/cloud-init-debug.log
+  # Bring up the new cloudinit-eth0 connection
+  - nmcli connection up cloudinit-eth0 || true
+  # If that fails, try direct IP configuration
   - sleep 5
-  # Set the new IP if nmcli didn't work
-  - ip addr flush dev eth0 || true
-  - ip addr add $IPAddress/24 dev eth0 || true
-  - ip route add default via $Gateway || true
+  - ip addr show eth0 >> /var/log/cloud-init-debug.log
+  # Check if we got the right IP, if not force it
+  - "if ! ip addr show eth0 | grep -q '$IPAddress'; then ip addr flush dev eth0 && ip addr add $IPAddress/24 dev eth0 && ip route add default via $Gateway; fi"
   # Ensure SSH is running
   - systemctl enable sshd
   - systemctl start sshd
