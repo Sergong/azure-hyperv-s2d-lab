@@ -148,9 +148,24 @@ New-Item -ItemType Directory -Path $cloudInitPath -Force | Out-Null
 function Get-PasswordHash {
     param([string]$Password)
     
-    # For cloud-init, we can use plain text passwords in the chpasswd section
-    # Cloud-init will handle the hashing internally when applying the configuration
-    # This is actually the preferred method for cloud-init chpasswd
+    # Generate SHA-512 hash for cloud-init chpasswd
+    # Using Python to generate the hash since it's more reliable
+    try {
+        # Try to use Python to generate a proper SHA-512 hash
+        $salt = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 16 | ForEach-Object {[char]$_})
+        $pythonCommand = "import crypt; print(crypt.crypt('$Password', crypt.mksalt(crypt.METHOD_SHA512)))"
+        $hash = python3 -c $pythonCommand 2>$null
+        
+        if ($hash -and $hash.StartsWith('$6$')) {
+            Write-Host "  Generated SHA-512 password hash" -ForegroundColor Gray
+            return $hash
+        }
+    } catch {
+        Write-Warning "Could not generate password hash with Python, using plain text"
+    }
+    
+    # Fallback to plain text if hashing fails
+    Write-Host "  Using plain text password (cloud-init will hash it)" -ForegroundColor Gray
     return $Password
 }
 
@@ -229,11 +244,20 @@ write_files:
     owner: root:root
     content: |
       # SSH configuration from cloud-init - ensure password auth works
+      # These settings override the main sshd_config file
       PasswordAuthentication yes
       PermitRootLogin yes
       PubkeyAuthentication yes
       UsePAM yes
       ChallengeResponseAuthentication no
+  - path: /etc/ssh/sshd_config.d/99-force-password-auth.conf
+    permissions: '0600'
+    owner: root:root
+    content: |
+      # Force password authentication - highest priority override
+      # This file has the highest number so it loads last and overrides everything
+      PasswordAuthentication yes
+      PermitRootLogin yes
   - path: /etc/NetworkManager/system-connections/cloudinit-eth0.nmconnection
     permissions: '0600'
     owner: root:root
@@ -308,6 +332,21 @@ bootcmd:
 
 runcmd:
   - echo "Running cloud-init commands for $VMName" >> /var/log/cloud-init-debug.log
+  # CRITICAL: Disable and remove conflicting Packer SSH enforcement service
+  - systemctl stop packer-ssh-enforce.service || true
+  - systemctl disable packer-ssh-enforce.service || true
+  - rm -f /etc/systemd/system/packer-ssh-enforce.service || true
+  - rm -f /etc/ssh/.packer-ssh-marker || true
+  - systemctl daemon-reload
+  # Force password authentication to be enabled in all SSH configs
+  - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+  - sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+  # Ensure user passwords are actually set correctly
+  - echo "root:$RootPassword" | chpasswd
+  - echo "${Username}:$UserPassword" | chpasswd
+  # Force user account to be unlocked and enabled
+  - passwd -u root || true
+  - passwd -u $Username || true
   # Remove any existing eth0 connections that might conflict
   - nmcli connection delete eth0 || true
   - nmcli connection delete "System eth0" || true
@@ -325,10 +364,12 @@ runcmd:
   - ip addr show eth0 >> /var/log/cloud-init-debug.log
   # Check if we got the right IP, if not force it
   - "if ! ip addr show eth0 | grep -q '$IPAddress'; then ip addr flush dev eth0 && ip addr add $IPAddress/24 dev eth0 && ip route add default via $Gateway; fi"
-  # Ensure SSH is running
+  # Restart SSH to apply new configuration
+  - systemctl restart sshd
   - systemctl enable sshd
-  - systemctl start sshd
   - echo "Network configured: `$(ip addr show eth0 | grep inet)" >> /var/log/cloud-init-debug.log
+  - echo "SSH config: `$(grep PasswordAuthentication /etc/ssh/sshd_config)" >> /var/log/cloud-init-debug.log
+  - echo "User accounts: `$(getent passwd | grep -E '^(root|$Username):')" >> /var/log/cloud-init-debug.log
   - echo "Cloud-init configuration completed for $VMName at `$(date)" >> /var/log/cloud-init-debug.log
   - /usr/local/bin/cloud-init-debug >> /var/log/cloud-init-debug.log
 
