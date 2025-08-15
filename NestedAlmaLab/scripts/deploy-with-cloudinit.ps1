@@ -182,21 +182,34 @@ local-hostname: $VMName
     $userData = @"
 #cloud-config
 
+# Force cloud-init to run
+cloud_init_modules:
+  - migrator
+  - seed_random
+  - bootcmd
+  - write-files
+  - growpart
+  - resizefs
+  - set_hostname
+  - update_hostname
+  - update_etc_hosts
+  - users-groups
+  - ssh
+
 # Set hostname
 hostname: $VMName
 fqdn: $VMName.lab.local
 
-# Configure users
+# Configure users - create new user and set passwords
 users:
   - name: $Username
-    groups: wheel
+    groups: [wheel, adm, systemd-journal]
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
-    passwd: $userPasswordHash
     lock_passwd: false
     ssh_authorized_keys: []
 
-# Set root password
+# Set passwords for both root and user
 chpasswd:
   list: |
     root:${RootPassword}
@@ -207,7 +220,7 @@ chpasswd:
 ssh_pwauth: True
 disable_root: False
 
-# Network configuration
+# Write network configuration file
 write_files:
   - path: /etc/NetworkManager/system-connections/eth0.nmconnection
     permissions: '0600'
@@ -227,22 +240,60 @@ write_files:
       
       [ipv6]
       method=ignore
+  - path: /etc/cloud/cloud.cfg.d/99_force_nocloud.cfg
+    permissions: '0644'
+    owner: root:root
+    content: |
+      # Force NoCloud data source
+      datasource_list: [ NoCloud ]
+      datasource:
+        NoCloud:
+          seedfrom: /var/lib/cloud/seed/nocloud/
+  - path: /usr/local/bin/cloud-init-debug
+    permissions: '0755'
+    owner: root:root
+    content: |
+      #!/bin/bash
+      echo "=== Cloud-init Debug Info ==="
+      echo "Status: $(cloud-init status --long)"
+      echo "Data source: $(cloud-init query datasource)"
+      echo "Instance ID: $(cloud-init query instance_id)"
+      echo "Local hostname: $(cloud-init query local_hostname)"
+      echo ""
+      echo "=== Available data sources ==="
+      ls -la /var/lib/cloud/seed/ 2>/dev/null || echo "No seed directory"
+      ls -la /var/lib/cloud/seed/nocloud/ 2>/dev/null || echo "No nocloud seed"
+      echo ""
+      echo "=== Mount points ==="
+      mount | grep -i cd
+      echo ""
+      echo "=== Cloud-init logs ==="
+      tail -20 /var/log/cloud-init.log
 
 # Commands to run after boot
+bootcmd:
+  - echo "Starting cloud-init configuration for $VMName" >> /var/log/cloud-init-debug.log
+  - systemctl enable cloud-init-local cloud-init cloud-config cloud-final
+  - systemctl daemon-reload
+
 runcmd:
+  - echo "Running cloud-init commands for $VMName" >> /var/log/cloud-init-debug.log
   - systemctl reload NetworkManager
   - nmcli connection reload
-  - nmcli connection up eth0
+  - sleep 5
+  - nmcli connection up eth0 || true
   - systemctl enable sshd
   - systemctl start sshd
-  - echo "Cloud-init configuration completed for $VMName" >> /var/log/cloud-init-custom.log
+  - echo "Network configured: $(ip addr show eth0 | grep inet)" >> /var/log/cloud-init-debug.log
+  - echo "Cloud-init configuration completed for $VMName at $(date)" >> /var/log/cloud-init-debug.log
+  - /usr/local/bin/cloud-init-debug >> /var/log/cloud-init-debug.log
 
 # Package updates
 package_update: false
 package_upgrade: false
 
 # Final message
-final_message: "The system is finally up, after `$UPTIME seconds"
+final_message: "Cloud-init completed successfully for $VMName at \$UPTIME seconds"
 "@
 
     if ($SSHPublicKey) {
