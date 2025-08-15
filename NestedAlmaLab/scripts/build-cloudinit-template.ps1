@@ -318,8 +318,13 @@ build {
 "@
 
 # Complete the templates with build section
-$packerTemplateGen1 += ($buildSection -replace "SOURCENAME", "almalinux-cloudinit-gen1")
-$packerTemplateGen2 += ($buildSection -replace "SOURCENAME", "almalinux-cloudinit-gen2")
+$packerTemplateGen1 = $packerTemplateGen1 + ($buildSection -replace "SOURCENAME", "almalinux-cloudinit-gen1")
+$packerTemplateGen2 = $packerTemplateGen2 + ($buildSection -replace "SOURCENAME", "almalinux-cloudinit-gen2")
+
+# Debug - Write the contents to verify build section is appended
+Write-Host "Verifying build section is present in templates..." -ForegroundColor Yellow
+Write-Host "Template Gen1 ends with: $($packerTemplateGen1.Substring($packerTemplateGen1.Length - 50))" -ForegroundColor Gray
+Write-Host "Template Gen2 ends with: $($packerTemplateGen2.Substring($packerTemplateGen2.Length - 50))" -ForegroundColor Gray
 
 # Determine which template to create based on Generation parameter
 if ($Generation -eq 1) {
@@ -387,15 +392,49 @@ foreach ($rule in $firewallRules) {
 # Initialize Packer plugins
 Write-Host "`nInitializing Packer plugins..." -ForegroundColor Yellow
 try {
-    & packer init $templatePath
+    # Verify template file exists and has content
+    if (Test-Path $templatePath) {
+        $templateContent = Get-Content -Path $templatePath -Raw
+        $templateSize = (Get-Item $templatePath).Length
+        Write-Host "Template file exists with size: $templateSize bytes" -ForegroundColor Gray
+        
+        # Verify template contains required sections
+        if (-not $templateContent.Contains("build {")) {
+            Write-Error "Template does not contain build section!"
+            Write-Host "Attempting to fix template..." -ForegroundColor Yellow
+            
+            # Emergency fix - append build block if missing
+            $fixedBuildSection = ($buildSection -replace "SOURCENAME", $($Generation -eq 1 ? "almalinux-cloudinit-gen1" : "almalinux-cloudinit-gen2"))
+            Add-Content -Path $templatePath -Value $fixedBuildSection
+            Write-Host "Build section added to template." -ForegroundColor Green
+        }
+    } else {
+        Write-Error "Template file doesn't exist at: $templatePath"
+        exit 1
+    }
+    
+    # Initialize Packer with verbose output
+    Write-Host "Running: packer init -machine-readable $templatePath" -ForegroundColor Gray
+    & packer init -machine-readable $templatePath
+    
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Packer plugins initialized successfully" -ForegroundColor Green
     } else {
         Write-Warning "Packer plugin initialization returned exit code: $LASTEXITCODE"
+        
+        # Try with explicit plugin source
+        Write-Host "Attempting to install Hyper-V plugin explicitly..." -ForegroundColor Yellow
+        & packer plugins install github.com/hashicorp/hyperv
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Hyper-V plugin installed manually" -ForegroundColor Green
+        } else {
+            Write-Error "Failed to install Hyper-V plugin manually. Please check Packer installation."
+        }
     }
 } catch {
     Write-Warning "Could not initialize Packer plugins: $($_.Exception.Message)"
-    Write-Host "You may need to run 'packer init $templatePath' manually"
+    Write-Host "You may need to run 'packer plugins install github.com/hashicorp/hyperv' manually"
 }
 
 # Build the template
