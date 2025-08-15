@@ -142,7 +142,7 @@ function New-PackerTemplate {
         $template += "    `" biosdevname=0`",`n"
         $template += "    `" net.ifnames=0`",`n"
         $template += "    `" rd.live.check=0`",`n"
-        $template += "    `"<enter>`"             # Boot with modified parameters`n"
+        $template += "    `"<F10>`"             # Boot with modified parameters`n"
         $template += "  ]`n"
     }
     
