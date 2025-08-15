@@ -209,18 +209,18 @@ users:
     lock_passwd: false
     ssh_authorized_keys: []
 
-# Set passwords for both root and user
+# Set passwords for both root and user using chpasswd (plain text)
 chpasswd:
   list: |
-    root:${RootPassword}
-    ${Username}:${UserPassword}
+    root:$RootPassword
+    ${Username}:$UserPassword
   expire: False
 
 # SSH configuration
 ssh_pwauth: True
 disable_root: False
 
-# Write network configuration file
+# Write network configuration files - force new IP configuration
 write_files:
   - path: /etc/NetworkManager/system-connections/eth0.nmconnection
     permissions: '0600'
@@ -231,15 +231,33 @@ write_files:
       type=ethernet
       interface-name=eth0
       autoconnect=true
+      autoconnect-priority=100
       
       [ipv4]
       method=manual
       addresses=$IPAddress/24
       gateway=$Gateway
       dns=$($DNS -replace ',',';')
+      may-fail=false
       
       [ipv6]
       method=ignore
+  - path: /etc/sysconfig/network-scripts/ifcfg-eth0
+    permissions: '0644'
+    owner: root:root
+    content: |
+      DEVICE=eth0
+      BOOTPROTO=static
+      ONBOOT=yes
+      IPADDR=$IPAddress
+      NETMASK=255.255.255.0
+      GATEWAY=$Gateway
+      DNS1=8.8.8.8
+      DNS2=8.8.4.4
+      DEFROUTE=yes
+      IPV4_FAILURE_FATAL=no
+      IPV6INIT=no
+      NAME=eth0
   - path: /etc/cloud/cloud.cfg.d/99_force_nocloud.cfg
     permissions: '0644'
     owner: root:root
@@ -278,10 +296,25 @@ bootcmd:
 
 runcmd:
   - echo "Running cloud-init commands for $VMName" >> /var/log/cloud-init-debug.log
+  # Remove any existing eth0 connections that might conflict
+  - nmcli connection delete eth0 || true
+  - nmcli connection delete "System eth0" || true
+  - nmcli connection delete "Wired connection 1" || true
+  # Reload network configuration
   - systemctl reload NetworkManager
   - nmcli connection reload
   - sleep 5
+  # Bring up the new eth0 connection
   - nmcli connection up eth0 || true
+  # Force network restart if needed
+  - systemctl restart network || true
+  - systemctl restart NetworkManager || true
+  - sleep 5
+  # Set the new IP if nmcli didn't work
+  - ip addr flush dev eth0 || true
+  - ip addr add $IPAddress/24 dev eth0 || true
+  - ip route add default via $Gateway || true
+  # Ensure SSH is running
   - systemctl enable sshd
   - systemctl start sshd
   - echo "Network configured: `$(ip addr show eth0 | grep inet)" >> /var/log/cloud-init-debug.log
