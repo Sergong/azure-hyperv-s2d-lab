@@ -318,29 +318,52 @@ build {
 "@
 
 # Complete the templates with build section
-$packerTemplateGen1 = $packerTemplateGen1 + ($buildSection -replace "SOURCENAME", "almalinux-cloudinit-gen1")
-$packerTemplateGen2 = $packerTemplateGen2 + ($buildSection -replace "SOURCENAME", "almalinux-cloudinit-gen2")
+$gen1BuildSection = $buildSection -replace "SOURCENAME", "almalinux-cloudinit-gen1"
+$gen2BuildSection = $buildSection -replace "SOURCENAME", "almalinux-cloudinit-gen2"
+
+$packerTemplateGen1 = $packerTemplateGen1 + $gen1BuildSection
+$packerTemplateGen2 = $packerTemplateGen2 + $gen2BuildSection
 
 # Debug - Write the contents to verify build section is appended
 Write-Host "Verifying build section is present in templates..." -ForegroundColor Yellow
-Write-Host "Template Gen1 ends with: $($packerTemplateGen1.Substring($packerTemplateGen1.Length - 50))" -ForegroundColor Gray
-Write-Host "Template Gen2 ends with: $($packerTemplateGen2.Substring($packerTemplateGen2.Length - 50))" -ForegroundColor Gray
+if ($packerTemplateGen1.Length -gt 50) {
+    Write-Host "Template Gen1 ends with: $($packerTemplateGen1.Substring($packerTemplateGen1.Length - 50))" -ForegroundColor Gray
+} else {
+    Write-Host "Template Gen1 is too short: $($packerTemplateGen1.Length) characters" -ForegroundColor Red
+}
+if ($packerTemplateGen2.Length -gt 50) {
+    Write-Host "Template Gen2 ends with: $($packerTemplateGen2.Substring($packerTemplateGen2.Length - 50))" -ForegroundColor Gray
+} else {
+    Write-Host "Template Gen2 is too short: $($packerTemplateGen2.Length) characters" -ForegroundColor Red
+}
 
 # Determine which template to create based on Generation parameter
 if ($Generation -eq 1) {
     $templatePath = Join-Path $projectRoot "almalinux-cloudinit-gen1.pkr.hcl"
-    $packerTemplateGen1 | Set-Content -Path $templatePath -Encoding UTF8
-    Write-Host "Generation 1 Packer template created: $templatePath" -ForegroundColor Green
+    $templateContent = $packerTemplateGen1
+    Write-Host "Generation 1 template length: $($templateContent.Length) characters" -ForegroundColor Gray
 } elseif ($Generation -eq 2) {
     $templatePath = Join-Path $projectRoot "almalinux-cloudinit-gen2.pkr.hcl"
-    $packerTemplateGen2 | Set-Content -Path $templatePath -Encoding UTF8
-    Write-Host "Generation 2 Packer template created: $templatePath" -ForegroundColor Green
+    $templateContent = $packerTemplateGen2
+    Write-Host "Generation 2 template length: $($templateContent.Length) characters" -ForegroundColor Gray
 } else {
     Write-Error "Invalid generation specified: $Generation. Must be 1 or 2."
     exit 1
 }
 
+# Verify template content before writing
+if ($templateContent.Length -lt 1000) {
+    Write-Error "Generated template is suspiciously short ($($templateContent.Length) characters). Something went wrong."
+    Write-Host "Template content preview:" -ForegroundColor Red
+    Write-Host $templateContent
+    exit 1
+}
+
+# Write the template file
+$templateContent | Set-Content -Path $templatePath -Encoding UTF8 -NoNewline
 Write-Host "Packer template created: $templatePath" -ForegroundColor Green
+Write-Host "Template size: $((Get-Item $templatePath).Length) bytes" -ForegroundColor Gray
+
 
 # Verify Hyper-V and network setup
 Write-Host "`nVerifying environment..." -ForegroundColor Yellow
