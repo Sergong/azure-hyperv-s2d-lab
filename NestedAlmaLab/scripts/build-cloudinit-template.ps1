@@ -37,8 +37,17 @@ if (-not (Test-Path $kickstartPath)) {
     exit 1
 }
 
+# Determine output path based on generation
+if ($Generation -eq 1) {
+    $outputPath = Join-Path $projectRoot "output-almalinux-cloudinit-gen1"
+} elseif ($Generation -eq 2) {
+    $outputPath = Join-Path $projectRoot "output-almalinux-cloudinit-gen2"
+} else {
+    Write-Error "Invalid generation specified: $Generation. Must be 1 or 2."
+    exit 1
+}
+
 # Check if template already exists
-$outputPath = Join-Path $projectRoot "output-almalinux-cloudinit"
 if ((Test-Path $outputPath) -and -not $Force) {
     Write-Warning "Template already exists at: $outputPath"
     Write-Host "Use -Force to rebuild the template."
@@ -316,12 +325,10 @@ $packerTemplateGen2 += ($buildSection -replace "SOURCENAME", "almalinux-cloudini
 if ($Generation -eq 1) {
     $templatePath = Join-Path $projectRoot "almalinux-cloudinit-gen1.pkr.hcl"
     $packerTemplateGen1 | Set-Content -Path $templatePath -Encoding UTF8
-    $outputPath = Join-Path $projectRoot "output-almalinux-cloudinit-gen1"
     Write-Host "Generation 1 Packer template created: $templatePath" -ForegroundColor Green
 } elseif ($Generation -eq 2) {
     $templatePath = Join-Path $projectRoot "almalinux-cloudinit-gen2.pkr.hcl"
     $packerTemplateGen2 | Set-Content -Path $templatePath -Encoding UTF8
-    $outputPath = Join-Path $projectRoot "output-almalinux-cloudinit-gen2"
     Write-Host "Generation 2 Packer template created: $templatePath" -ForegroundColor Green
 } else {
     Write-Error "Invalid generation specified: $Generation. Must be 1 or 2."
