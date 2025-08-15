@@ -202,6 +202,8 @@ fqdn: $VMName.lab.local
 
 # Configure users - create new user and set passwords
 users:
+  - name: root
+    lock_passwd: false
   - name: $Username
     groups: [wheel, adm, systemd-journal]
     sudo: ALL=(ALL) NOPASSWD:ALL
@@ -216,12 +218,22 @@ chpasswd:
     ${Username}:$UserPassword
   expire: False
 
-# SSH configuration
+# SSH configuration - force enable password auth
 ssh_pwauth: True
 disable_root: False
 
-# Write network configuration files - force new IP configuration
+# Write network configuration files and SSH config - force new IP configuration
 write_files:
+  - path: /etc/ssh/sshd_config.d/50-cloud-init.conf
+    permissions: '0600'
+    owner: root:root
+    content: |
+      # SSH configuration from cloud-init - ensure password auth works
+      PasswordAuthentication yes
+      PermitRootLogin yes
+      PubkeyAuthentication yes
+      UsePAM yes
+      ChallengeResponseAuthentication no
   - path: /etc/NetworkManager/system-connections/cloudinit-eth0.nmconnection
     permissions: '0600'
     owner: root:root
