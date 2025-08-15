@@ -218,8 +218,8 @@ users:
 # Set root password
 chpasswd:
   list: |
-    root:$RootPassword
-    $Username:$UserPassword
+    root:${RootPassword}
+    ${Username}:${UserPassword}
   expire: False
 
 # SSH configuration
