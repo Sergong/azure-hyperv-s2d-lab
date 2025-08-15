@@ -255,10 +255,10 @@ write_files:
     content: |
       #!/bin/bash
       echo "=== Cloud-init Debug Info ==="
-      echo "Status: $(cloud-init status --long)"
-      echo "Data source: $(cloud-init query datasource)"
-      echo "Instance ID: $(cloud-init query instance_id)"
-      echo "Local hostname: $(cloud-init query local_hostname)"
+      echo "Status: `$(cloud-init status --long)"
+      echo "Data source: `$(cloud-init query datasource)"
+      echo "Instance ID: `$(cloud-init query instance_id)"
+      echo "Local hostname: `$(cloud-init query local_hostname)"
       echo ""
       echo "=== Available data sources ==="
       ls -la /var/lib/cloud/seed/ 2>/dev/null || echo "No seed directory"
@@ -284,8 +284,8 @@ runcmd:
   - nmcli connection up eth0 || true
   - systemctl enable sshd
   - systemctl start sshd
-  - echo "Network configured: $(ip addr show eth0 | grep inet)" >> /var/log/cloud-init-debug.log
-  - echo "Cloud-init configuration completed for $VMName at $(date)" >> /var/log/cloud-init-debug.log
+  - echo "Network configured: `$(ip addr show eth0 | grep inet)" >> /var/log/cloud-init-debug.log
+  - echo "Cloud-init configuration completed for $VMName at `$(date)" >> /var/log/cloud-init-debug.log
   - /usr/local/bin/cloud-init-debug >> /var/log/cloud-init-debug.log
 
 # Package updates
@@ -462,7 +462,7 @@ function New-VMFromTemplateWithCloudInit {
         
         if (-not $isoCreated) {
             Write-Error "Failed to create cloud-init ISO for $VMName. Cannot proceed without cloud-init configuration."
-            throw "Cloud-init ISO creation failed"
+            throw "Cloud-init configuration failed"
         }
         
         Write-Host "  Cloud-init ISO created successfully" -ForegroundColor Green
