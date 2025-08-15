@@ -309,52 +309,54 @@ bootcmd:
   # Force cloud-init to recognize NoCloud datasource
   - systemctl enable cloud-init-local cloud-init cloud-config cloud-final
   - systemctl daemon-reload
-  # Clean up conflicting network connections early
-  - nmcli connection delete "System eth0" || true
-  - nmcli connection delete "Wired connection 1" || true
+  # Clean up conflicting network connections early - keep System eth0 as it has correct IP
+  - nmcli connection delete eth0 || true
 
 runcmd:
-  - echo "Running cloud-init commands for $VMName" >> /var/log/cloud-init-debug.log
-  # CRITICAL: Disable and remove conflicting Packer SSH enforcement service
-  - systemctl stop packer-ssh-enforce.service || true
-  - systemctl disable packer-ssh-enforce.service || true
-  - rm -f /etc/systemd/system/packer-ssh-enforce.service || true
-  - rm -f /etc/ssh/.packer-ssh-marker || true
-  - systemctl daemon-reload
-  # Force password authentication to be enabled in all SSH configs
-  - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-  - sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-  # Ensure user passwords are actually set correctly
-  - echo "root:$RootPassword" | chpasswd
-  - echo "${Username}:$UserPassword" | chpasswd
-  # Force user account to be unlocked and enabled
-  - passwd -u root || true
-  - passwd -u $Username || true
-  # Remove any existing eth0 connections that might conflict
-  - nmcli connection delete eth0 || true
-  - nmcli connection delete "System eth0" || true
-  - nmcli connection delete "Wired connection 1" || true
-  # Reload network configuration to pick up new connection file
-  - systemctl reload NetworkManager
-  - nmcli connection reload
-  - sleep 5
-  # List connections to debug
-  - nmcli connection show >> /var/log/cloud-init-debug.log
-  # Bring up the new cloudinit-eth0 connection
-  - nmcli connection up cloudinit-eth0 || true
-  # If that fails, try direct IP configuration
-  - sleep 5
-  - ip addr show eth0 >> /var/log/cloud-init-debug.log
-  # Check if we got the right IP, if not force it
-  - "if ! ip addr show eth0 | grep -q '$IPAddress'; then ip addr flush dev eth0 && ip addr add $IPAddress/24 dev eth0 && ip route add default via $Gateway; fi"
-  # Restart SSH to apply new configuration
-  - systemctl restart sshd
-  - systemctl enable sshd
-  - echo "Network configured: `$(ip addr show eth0 | grep inet)" >> /var/log/cloud-init-debug.log
-  - echo "SSH config: `$(grep PasswordAuthentication /etc/ssh/sshd_config)" >> /var/log/cloud-init-debug.log
-  - echo "User accounts: `$(getent passwd | grep -E '^(root|$Username):')" >> /var/log/cloud-init-debug.log
-  - echo "Cloud-init configuration completed for $VMName at `$(date)" >> /var/log/cloud-init-debug.log
-  - /usr/local/bin/cloud-init-debug >> /var/log/cloud-init-debug.log
+  - |
+    echo "Running cloud-init commands for $VMName" >> /var/log/cloud-init-debug.log
+    # CRITICAL: Disable and remove conflicting Packer SSH enforcement service
+    systemctl stop packer-ssh-enforce.service || true
+    systemctl disable packer-ssh-enforce.service || true
+    rm -f /etc/systemd/system/packer-ssh-enforce.service || true
+    rm -f /etc/ssh/.packer-ssh-marker || true
+    systemctl daemon-reload
+    # Force password authentication to be enabled in all SSH configs
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+    # Ensure user passwords are actually set correctly
+    echo "root:$RootPassword" | chpasswd
+    echo "${Username}:$UserPassword" | chpasswd
+    # Force user account to be unlocked and enabled
+    passwd -u root || true
+    passwd -u $Username || true
+    # Remove any existing eth0 connections that might conflict - keep System eth0 as it has correct config
+    nmcli connection delete eth0 || true
+    # Reload network configuration to pick up new connection file
+    systemctl reload NetworkManager
+    nmcli connection reload
+    sleep 5
+    # List connections to debug
+    nmcli connection show >> /var/log/cloud-init-debug.log
+    # Bring up the new cloudinit-eth0 connection
+    nmcli connection up cloudinit-eth0 || true
+    # If that fails, try direct IP configuration
+    sleep 5
+    ip addr show eth0 >> /var/log/cloud-init-debug.log
+    # Check if we got the right IP, if not force it
+    if ! ip addr show eth0 | grep -q '$IPAddress'; then 
+      ip addr flush dev eth0 
+      ip addr add $IPAddress/24 dev eth0 
+      ip route add default via $Gateway
+    fi
+    # Restart SSH to apply new configuration
+    systemctl restart sshd
+    systemctl enable sshd
+    echo "Network configured: `$(ip addr show eth0 | grep inet)" >> /var/log/cloud-init-debug.log
+    echo "SSH config: `$(grep PasswordAuthentication /etc/ssh/sshd_config)" >> /var/log/cloud-init-debug.log
+    echo "User accounts: `$(getent passwd | grep -E '^(root|$Username):')" >> /var/log/cloud-init-debug.log
+    echo "Cloud-init configuration completed for $VMName at `$(date)" >> /var/log/cloud-init-debug.log
+    /usr/local/bin/cloud-init-debug >> /var/log/cloud-init-debug.log
 
 # Package updates
 package_update: false
