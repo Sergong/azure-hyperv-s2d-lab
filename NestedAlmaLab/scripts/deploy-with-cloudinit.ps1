@@ -165,7 +165,8 @@ local-hostname: $VMName
 "@
     
     $metaDataPath = Join-Path $vmCloudInitPath "meta-data"
-    $metaData | Set-Content -Path $metaDataPath -Encoding UTF8
+    # Write without BOM - this is critical for cloud-init to work properly
+    [System.IO.File]::WriteAllText($metaDataPath, $metaData, [System.Text.UTF8Encoding]::new($false))
     
     # Create user-data file
     $userData = @"
@@ -368,7 +369,8 @@ final_message: "Cloud-init completed successfully for $VMName at \$UPTIME second
     }
     
     $userDataPath = Join-Path $vmCloudInitPath "user-data"
-    $userData | Set-Content -Path $userDataPath -Encoding UTF8
+    # Write without BOM - this is critical for cloud-init to work properly
+    [System.IO.File]::WriteAllText($userDataPath, $userData, [System.Text.UTF8Encoding]::new($false))
     
     # Create network-config file (alternative network configuration method)
     $networkConfig = @"
@@ -384,7 +386,8 @@ ethernets:
 "@
     
     $networkConfigPath = Join-Path $vmCloudInitPath "network-config"
-    $networkConfig | Set-Content -Path $networkConfigPath -Encoding UTF8
+    # Write without BOM - this is critical for cloud-init to work properly
+    [System.IO.File]::WriteAllText($networkConfigPath, $networkConfig, [System.Text.UTF8Encoding]::new($false))
     
     # Create NoCloud ISO using available tools
     $isoPath = $OutputPath
