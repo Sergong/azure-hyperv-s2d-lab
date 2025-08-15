@@ -294,136 +294,96 @@ ethernets:
         } catch {}
     }
     
-    # Method 3: Use PowerShell to create a simple ISO
+    # Method 3: Try to find oscdimg.exe in Windows SDK or ADK locations
     if (-not $isoCreated) {
-        Write-Host "  Creating cloud-init ISO using PowerShell..." -ForegroundColor Gray
-        try {
-            # Use PowerShell's built-in New-IsoFile cmdlet if available (Windows 11/Server 2022+)
-            if (Get-Command New-IsoFile -ErrorAction SilentlyContinue) {
-                New-IsoFile -Source $vmCloudInitPath -DestinationPath $isoPath -VolumeName "cidata" | Out-Null
-                $isoCreated = $true
-                Write-Host "  Created cloud-init ISO using New-IsoFile" -ForegroundColor Gray
+        Write-Host "  Searching for Windows ISO creation tools..." -ForegroundColor Gray
+        
+        # Common locations for oscdimg.exe
+        $oscdimgPaths = @(
+            "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe",
+            "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\x86\Oscdimg\oscdimg.exe",
+            "C:\Program Files\Microsoft SDKs\Windows\v7.1\Bin\oscdimg.exe",
+            "C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Bin\oscdimg.exe"
+        )
+        
+        $oscdimgPath = $null
+        foreach ($path in $oscdimgPaths) {
+            if (Test-Path $path) {
+                $oscdimgPath = $path
+                break
             }
-            # Alternative: Use DISM to create ISO (available on most Windows versions)
-            elseif (Get-Command oscdimg.exe -ErrorAction SilentlyContinue) {
-                $result = oscdimg.exe -n -m -o -h "$vmCloudInitPath" "$isoPath" 2>$null
-                if ($LASTEXITCODE -eq 0) {
-                    $isoCreated = $true
-                    Write-Host "  Created cloud-init ISO using oscdimg" -ForegroundColor Gray
-                }
-            }
-        } catch {
-            Write-Warning "  PowerShell ISO creation failed: $($_.Exception.Message)"
         }
         
-        if (-not $isoCreated) {
-            Write-Warning "  No ISO creation tools available. Cloud-init files will be available in directory only."
-            Write-Host "  Cloud-init files created in: $vmCloudInitPath" -ForegroundColor Yellow
-            Write-Host "  Note: VM will still work if cloud-init can find files via other methods" -ForegroundColor Yellow
-            return $false
+        if ($oscdimgPath) {
+            try {
+                Write-Host "  Found oscdimg at: $oscdimgPath" -ForegroundColor Gray
+                $result = & "$oscdimgPath" -n -m -o -h "$vmCloudInitPath" "$isoPath" 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    $isoCreated = $true
+                    Write-Host "  Created cloud-init ISO using oscdimg from Windows SDK" -ForegroundColor Gray
+                }
+            } catch {
+                Write-Warning "  oscdimg failed: $($_.Exception.Message)"
+            }
         }
+    }
+    
+    # Method 4: Create a simple ISO using PowerShell COM objects (last resort)
+    if (-not $isoCreated) {
+        Write-Host "  Attempting to create ISO using PowerShell COM..." -ForegroundColor Gray
+        try {
+            # Use IMAPI2 COM interface to create ISO
+            $mediaType = 1  # IMAPI_MEDIA_TYPE_DISK
+            $image = New-Object -ComObject IMAPI2.MsftFileSystemImage
+            $image.VolumeName = "cidata"
+            $image.FileSystemsToCreate = 3  # ISO9660 + Joliet
+            
+            $dir = $image.Root
+            
+            # Add files to the image
+            $files = Get-ChildItem $vmCloudInitPath -File
+            foreach ($file in $files) {
+                $fileStream = $image.CreateFileItem($file.FullName)
+                $dir.AddFile($file.Name, $fileStream)
+            }
+            
+            # Create the ISO
+            $result = $image.CreateResultImage()
+            $stream = $result.ImageStream
+            
+            # Write to file
+            $buffer = New-Object byte[] 2048
+            $fileStream = [System.IO.File]::Create($isoPath)
+            
+            do {
+                $bytesRead = $stream.Read($buffer, 0, $buffer.Length)
+                if ($bytesRead -gt 0) {
+                    $fileStream.Write($buffer, 0, $bytesRead)
+                }
+            } while ($bytesRead -gt 0)
+            
+            $fileStream.Close()
+            $stream.Close()
+            
+            if (Test-Path $isoPath) {
+                $isoCreated = $true
+                Write-Host "  Created cloud-init ISO using COM interface" -ForegroundColor Gray
+            }
+        } catch {
+            Write-Warning "  COM ISO creation failed: $($_.Exception.Message)"
+        }
+    }
+    
+    if (-not $isoCreated) {
+        Write-Error "  Unable to create cloud-init ISO. Please install Windows ADK or ensure mkisofs/genisoimage is available."
+        Write-Host "  Cloud-init files created in: $vmCloudInitPath" -ForegroundColor Yellow
+        Write-Host "  You can manually create an ISO using: oscdimg -n -m -o -h `"$vmCloudInitPath`" `"$isoPath`"" -ForegroundColor Yellow
+        return $false
     }
     
     return $isoCreated
 }
 
-# Function to inject cloud-init files directly into VHDX
-function Add-CloudInitToVHDX {
-    param(
-        [string]$VHDXPath,
-        [string]$VMName,
-        [string]$IPAddress
-    )
-    
-    try {
-        Write-Host "  Injecting cloud-init configuration into VHDX..." -ForegroundColor Gray
-        
-        # Mount the VHDX
-        $mountResult = Mount-VHD -Path $VHDXPath -Passthru
-        $disk = Get-Disk | Where-Object { $_.Location -eq $mountResult.Path }
-        
-        # Get all partitions and find the largest one (likely root filesystem)
-        $partitions = Get-Partition -DiskNumber $disk.Number | Sort-Object Size -Descending
-        
-        Write-Host "    Found $($partitions.Count) partitions:" -ForegroundColor Gray
-        foreach ($p in $partitions) {
-            Write-Host "    - Partition $($p.PartitionNumber): $($p.Type), Size: $([math]::Round($p.Size/1GB, 2)) GB" -ForegroundColor Gray
-        }
-        
-        # Try to find the root partition - usually the largest non-system partition
-        $rootPartition = $null
-        
-        # First try: Find largest partition that's not System or Reserved
-        $rootPartition = $partitions | Where-Object { 
-            $_.Type -notin @('System', 'Reserved') -and $_.Size -gt 500MB 
-        } | Select-Object -First 1
-        
-        # Second try: If no suitable partition found, use the largest partition
-        if (-not $rootPartition) {
-            $rootPartition = $partitions | Select-Object -First 1
-        }
-        
-        if (-not $rootPartition) {
-            throw "Could not find any suitable partition in VHDX"
-        }
-        
-        Write-Host "    Using partition $($rootPartition.PartitionNumber) ($($rootPartition.Type), $([math]::Round($rootPartition.Size/1GB, 2)) GB)" -ForegroundColor Gray
-        
-        # Assign drive letter if needed
-        $driveLetter = $rootPartition.DriveLetter
-        if (-not $driveLetter) {
-            # Find an available drive letter
-            $availableLetters = 67..90 | ForEach-Object { [char]$_ } | Where-Object { -not (Get-PSDrive -Name $_ -ErrorAction SilentlyContinue) }
-            if ($availableLetters.Count -gt 0) {
-                $driveLetter = $availableLetters[0]
-                $rootPartition | Set-Partition -NewDriveLetter $driveLetter
-                Write-Host "    Assigned drive letter: $driveLetter" -ForegroundColor Gray
-            } else {
-                throw "No available drive letters to assign"
-            }
-        }
-        
-        # Create cloud-init directory structure
-        $cloudInitDir = "${driveLetter}:\var\lib\cloud\seed\nocloud"
-        Write-Host "    Creating cloud-init directory: $cloudInitDir" -ForegroundColor Gray
-        
-        # Create directory structure with proper error handling
-        try {
-            New-Item -ItemType Directory -Path "${driveLetter}:\var" -Force -ErrorAction SilentlyContinue | Out-Null
-            New-Item -ItemType Directory -Path "${driveLetter}:\var\lib" -Force -ErrorAction SilentlyContinue | Out-Null
-            New-Item -ItemType Directory -Path "${driveLetter}:\var\lib\cloud" -Force -ErrorAction SilentlyContinue | Out-Null
-            New-Item -ItemType Directory -Path "${driveLetter}:\var\lib\cloud\seed" -Force -ErrorAction SilentlyContinue | Out-Null
-            New-Item -ItemType Directory -Path $cloudInitDir -Force | Out-Null
-        } catch {
-            Write-Warning "    Could not create cloud-init directories: $($_.Exception.Message)"
-            # Try alternative method - create files in root and let cloud-init find them
-            $cloudInitDir = "${driveLetter}:\"
-            Write-Host "    Using root directory instead: $cloudInitDir" -ForegroundColor Yellow
-        }
-        
-        # Generate and write cloud-init files
-        $vmCloudInitPath = Join-Path $cloudInitPath $VMName
-        if (Test-Path $vmCloudInitPath) {
-            $cloudInitFiles = Get-ChildItem $vmCloudInitPath -File
-            foreach ($file in $cloudInitFiles) {
-                $targetPath = Join-Path $cloudInitDir $file.Name
-                Copy-Item $file.FullName $targetPath -Force
-                Write-Host "    Copied $($file.Name) to $targetPath" -ForegroundColor Gray
-            }
-        }
-        
-        # Unmount the VHDX
-        Dismount-VHD -Path $VHDXPath
-        Write-Host "    Cloud-init files successfully injected" -ForegroundColor Green
-        
-        return $true
-        
-    } catch {
-        Write-Warning "  Failed to inject cloud-init files: $($_.Exception.Message)"
-        try { Dismount-VHD -Path $VHDXPath -ErrorAction SilentlyContinue } catch {}
-        return $false
-    }
-}
 
 # Function to create VM from template with cloud-init
 function New-VMFromTemplateWithCloudInit {
@@ -449,16 +409,12 @@ function New-VMFromTemplateWithCloudInit {
         # Create cloud-init files and ISO
         $isoCreated = New-CloudInitISO -VMName $VMName -IPAddress $IPAddress -OutputPath (Join-Path $vmCloudInitPath "cloud-init.iso")
         
-        # Try to inject cloud-init into the VHDX (optional - ISO method is primary)
         if (-not $isoCreated) {
-            Write-Host "  ISO creation failed, trying VHDX injection as fallback..." -ForegroundColor Yellow
-            $cloudInitInjected = Add-CloudInitToVHDX -VHDXPath $TargetVHDX -VMName $VMName -IPAddress $IPAddress
-            if (-not $cloudInitInjected) {
-                Write-Warning "  Both ISO creation and VHDX injection failed. VM may not have cloud-init configuration."
-            }
-        } else {
-            Write-Host "  Cloud-init ISO created successfully - will use ISO method" -ForegroundColor Green
+            Write-Error "Failed to create cloud-init ISO for $VMName. Cannot proceed without cloud-init configuration."
+            throw "Cloud-init ISO creation failed"
         }
+        
+        Write-Host "  Cloud-init ISO created successfully" -ForegroundColor Green
         
         # Detect VM generation
         $generation = 1
