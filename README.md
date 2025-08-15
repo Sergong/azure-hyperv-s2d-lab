@@ -166,10 +166,12 @@ Invoke-Command -ComputerName hyperv-node-1 -ScriptBlock { Get-ComputerInfo } -Cr
    - Windows Updates/patches (if any): ~2-3 minutes
    - AutoLogon configuration: ~30 seconds
 
-1. Bootstrap Script Execution (12-15 minutes)
+3. Bootstrap Script Execution (12-15 minutes)
    - Install-WindowsFeature (Hyper-V, Failover-Clustering, FS-FileServer): ~8-12 minutes
    - This includes a mandatory restart after Hyper-V installation
    - Second boot after restart: ~2-3 minutes
+
+4. Setup-s2d-cluster Script Execution (5-10 minutes)
    - VM Switch creation: ~30 seconds
    - Storage Pool/Volume creation: ~1-2 minutes
    - Cluster validation (Test-Cluster): ~2-3 minutes
