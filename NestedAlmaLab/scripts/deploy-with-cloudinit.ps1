@@ -262,11 +262,14 @@ write_files:
     permissions: '0644'
     owner: root:root
     content: |
-      # Force NoCloud data source
+      # Force NoCloud data source only
       datasource_list: [ NoCloud ]
       datasource:
         NoCloud:
-          seedfrom: /var/lib/cloud/seed/nocloud/
+          # Look for cidata volume label on CD-ROM devices
+          fs_label: cidata
+          # Explicitly check these device paths
+          seedfrom: /dev/sr0
   - path: /usr/local/bin/cloud-init-debug
     permissions: '0755'
     owner: root:root
@@ -291,6 +294,12 @@ write_files:
 # Commands to run after boot
 bootcmd:
   - echo "Starting cloud-init configuration for $VMName" >> /var/log/cloud-init-debug.log
+  # Ensure CD-ROM devices are available and mount cloud-init data
+  - modprobe sr_mod || true
+  - mkdir -p /mnt/cidata
+  - mount /dev/sr0 /mnt/cidata || mount /dev/sr1 /mnt/cidata || echo "Could not mount cloud-init CD-ROM" >> /var/log/cloud-init-debug.log
+  - ls -la /mnt/cidata >> /var/log/cloud-init-debug.log 2>&1 || echo "No cloud-init data found" >> /var/log/cloud-init-debug.log
+  # Force cloud-init to recognize NoCloud datasource
   - systemctl enable cloud-init-local cloud-init cloud-config cloud-final
   - systemctl daemon-reload
   # Clean up conflicting network connections early
