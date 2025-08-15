@@ -1,5 +1,5 @@
 # Fix Cloud-init Issues in AlmaLinux Template
-# This script diagnoses and fixes common cloud-init problems in the template VM
+# This script provides manual steps to fix cloud-init in the template VM
 
 param(
     [Parameter(Mandatory=$true)]
@@ -12,66 +12,16 @@ param(
     [string]$Password = "labpass123!"
 )
 
-Write-Host "=== Fixing Cloud-init in Template VM: $VMName ====" -ForegroundColor Cyan
+Write-Host "=== Cloud-init Template Fix Guide for VM: $VMName ====" -ForegroundColor Cyan
 
-# Function to run commands in the VM via SSH
-function Invoke-VMCommand {
-    param(
-        [string]$Command,
-        [string]$Description
-    )
-    
-    Write-Host "  $Description..." -ForegroundColor Gray
-    
-    # Get VM IP address
-    $vm = Get-VM -Name $VMName
-    $vmIP = $null
-    
-    # Try to get IP from VM integration services
-    $kvpData = Get-VMKeyValuePairItem -VMName $VMName | Where-Object { $_.Key -eq "NetworkAddressIPv4" }
-    if ($kvpData) {
-        $vmIP = $kvpData.Value
-    }
-    
-    if (-not $vmIP) {
-        # Try to get IP from network adapter
-        $networkAdapter = Get-VMNetworkAdapter -VMName $VMName
-        $vmIP = $networkAdapter.IPAddresses | Where-Object { $_ -match "^\d+\.\d+\.\d+\.\d+$" } | Select-Object -First 1
-    }
-    
-    if (-not $vmIP) {
-        Write-Warning "Could not determine VM IP address. Using default template IP 192.168.200.100"
-        $vmIP = "192.168.200.100"
-    }
-    
-    Write-Host "    Using VM IP: $vmIP" -ForegroundColor Gray
-    
-    # Create SSH command using plink (if available) or warn about manual execution
-    try {
-        $sshCommand = "echo `"$Password`" | plink -ssh -l $Username -pw `"$Password`" $vmIP `"$Command`""
-        $result = Invoke-Expression $sshCommand 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "    ✓ Success" -ForegroundColor Green
-            return $result
-        } else {
-            Write-Warning "    SSH command failed. Please run manually: ssh $Username@$vmIP '$Command'"
-            return $null
-        }
-    } catch {
-        Write-Host "    Manual execution required:" -ForegroundColor Yellow
-        Write-Host "      ssh $Username@$vmIP" -ForegroundColor White
-        Write-Host "      sudo $Command" -ForegroundColor White
-        return $null
-    }
-}
-
-# Check if VM is running
+# Check if VM exists and get its info
 $vm = Get-VM -Name $VMName -ErrorAction SilentlyContinue
 if (-not $vm) {
     Write-Error "VM '$VMName' not found!"
     exit 1
 }
 
+# Start VM if not running
 if ($vm.State -ne "Running") {
     Write-Host "Starting VM $VMName..." -ForegroundColor Yellow
     Start-VM -Name $VMName
@@ -79,56 +29,71 @@ if ($vm.State -ne "Running") {
     Start-Sleep -Seconds 30
 }
 
-Write-Host "`nStep 1: Checking cloud-init status..."
-Invoke-VMCommand "cloud-init status --long" "Checking current cloud-init status"
+# Try to get VM IP
+$vmIP = $null
+try {
+    $networkAdapter = Get-VMNetworkAdapter -VMName $VMName
+    $vmIP = $networkAdapter.IPAddresses | Where-Object { $_ -match "^\d+\.\d+\.\d+\.\d+$" } | Select-Object -First 1
+} catch {}
 
-Write-Host "`nStep 2: Checking for cloud-init disable files..."
-Invoke-VMCommand "ls -la /etc/cloud/cloud-init.disabled /var/lib/cloud/data/disabled 2>/dev/null || echo 'No disable files found'" "Looking for disable files"
+if (-not $vmIP) {
+    $vmIP = "192.168.200.100"  # Default template IP
+    Write-Warning "Could not detect VM IP, using default: $vmIP"
+} else {
+    Write-Host "Detected VM IP: $vmIP" -ForegroundColor Green
+}
 
-Write-Host "`nStep 3: Enabling cloud-init services..."
-Invoke-VMCommand "sudo systemctl enable cloud-init-local cloud-init cloud-config cloud-final" "Enabling cloud-init services"
+# Display manual steps
+Write-Host "`n=== MANUAL STEPS TO FIX CLOUD-INIT ====" -ForegroundColor Yellow
+Write-Host "Connect to your VM and run these commands:"
 
-Write-Host "`nStep 4: Removing any disable files..."
-Invoke-VMCommand "sudo rm -f /etc/cloud/cloud-init.disabled /var/lib/cloud/data/disabled" "Removing disable files"
+Write-Host "`n1. Connect to the VM:" -ForegroundColor Cyan
+Write-Host "   ssh $Username@$vmIP" -ForegroundColor White
+Write-Host "   Password: $Password" -ForegroundColor Gray
 
-Write-Host "`nStep 5: Configuring cloud-init for NoCloud..."
-$cloudInitConfig = @"
-# Force cloud-init to use NoCloud data source
-datasource_list: [ NoCloud ]
-datasource:
-  NoCloud:
-    seedfrom: /var/lib/cloud/seed/nocloud/
-"@
+Write-Host "`n2. Check current cloud-init status:" -ForegroundColor Cyan
+Write-Host "   cloud-init status --long" -ForegroundColor White
 
-# Create a temporary file path
-$tempConfigPath = "/tmp/99_force_nocloud.cfg"
+Write-Host "`n3. Check for disable files:" -ForegroundColor Cyan
+Write-Host "   ls -la /etc/cloud/cloud-init.disabled /var/lib/cloud/data/disabled 2>/dev/null" -ForegroundColor White
 
-Write-Host "  Creating cloud-init configuration..." -ForegroundColor Gray
-Write-Host "    Manual steps required:" -ForegroundColor Yellow
-Write-Host "      ssh $Username@<VM_IP>" -ForegroundColor White
-Write-Host "      sudo tee /etc/cloud/cloud.cfg.d/99_force_nocloud.cfg << 'EOF'" -ForegroundColor White
-Write-Host $cloudInitConfig -ForegroundColor White
-Write-Host "      EOF" -ForegroundColor White
+Write-Host "`n4. Remove any disable files:" -ForegroundColor Cyan
+Write-Host "   sudo rm -f /etc/cloud/cloud-init.disabled /var/lib/cloud/data/disabled" -ForegroundColor White
 
-Write-Host "`nStep 6: Ensuring NoCloud seed directory exists..."
-Invoke-VMCommand "sudo mkdir -p /var/lib/cloud/seed/nocloud && sudo chown -R root:root /var/lib/cloud/seed" "Creating NoCloud seed directory"
+Write-Host "`n5. Enable cloud-init services:" -ForegroundColor Cyan
+Write-Host "   sudo systemctl enable cloud-init-local cloud-init cloud-config cloud-final" -ForegroundColor White
 
-Write-Host "`nStep 7: Cleaning cloud-init state..."
-Invoke-VMCommand "sudo cloud-init clean --logs" "Cleaning cloud-init state and logs"
+Write-Host "`n6. Create NoCloud configuration:" -ForegroundColor Cyan
+Write-Host "   sudo tee /etc/cloud/cloud.cfg.d/99_force_nocloud.cfg > /dev/null << 'EOF'" -ForegroundColor White
+Write-Host "# Force cloud-init to use NoCloud data source" -ForegroundColor Gray
+Write-Host "datasource_list: [ NoCloud ]" -ForegroundColor Gray
+Write-Host "datasource:" -ForegroundColor Gray
+Write-Host "  NoCloud:" -ForegroundColor Gray
+Write-Host "    seedfrom: /var/lib/cloud/seed/nocloud/" -ForegroundColor Gray
+Write-Host "EOF" -ForegroundColor White
 
-Write-Host "`nStep 8: Verifying configuration..."
-Invoke-VMCommand "sudo cloud-init init --local" "Testing cloud-init local initialization"
+Write-Host "`n7. Ensure NoCloud seed directory exists:" -ForegroundColor Cyan
+Write-Host "   sudo mkdir -p /var/lib/cloud/seed/nocloud" -ForegroundColor White
+Write-Host "   sudo chown -R root:root /var/lib/cloud/seed" -ForegroundColor White
 
-Write-Host "`n=== Manual Verification Steps ====" -ForegroundColor Cyan
-Write-Host "Please connect to the VM and run these commands to verify:"
-Write-Host "  1. Check status: cloud-init status --long" -ForegroundColor White
-Write-Host "  2. Check config: cloud-init query --all" -ForegroundColor White
-Write-Host "  3. Check logs: sudo tail -f /var/log/cloud-init.log" -ForegroundColor White
-Write-Host "  4. Test NoCloud: sudo cloud-init init --local" -ForegroundColor White
+Write-Host "`n8. Clean cloud-init state:" -ForegroundColor Cyan
+Write-Host "   sudo cloud-init clean --logs" -ForegroundColor White
 
-Write-Host "`n=== Template Preparation Complete ====" -ForegroundColor Green
-Write-Host "After making these changes, shut down the VM and use it as a template."
-Write-Host "The next deployment should have working cloud-init!"
+Write-Host "`n9. Test cloud-init configuration:" -ForegroundColor Cyan
+Write-Host "   sudo cloud-init init --local" -ForegroundColor White
+Write-Host "   cloud-init status --long" -ForegroundColor White
 
-Write-Host "`nTo shut down the VM when ready:"
-Write-Host "  Stop-VM -Name $VMName" -ForegroundColor White
+Write-Host "`n10. Shut down the VM to prepare template:" -ForegroundColor Cyan
+Write-Host "    sudo shutdown -h now" -ForegroundColor White
+
+Write-Host "`n=== VERIFICATION COMMANDS ====" -ForegroundColor Yellow
+Write-Host "After restarting the VM, these should work:"
+Write-Host "   cloud-init status --long      # Should show 'done'" -ForegroundColor White
+Write-Host "   cloud-init query datasource   # Should show 'NoCloud'" -ForegroundColor White
+Write-Host "   ls -la /var/lib/cloud/seed/nocloud/  # Should be accessible" -ForegroundColor White
+
+Write-Host "`n=== POWERSHELL COMMANDS ====" -ForegroundColor Green
+Write-Host "After fixing the template, stop the VM:"
+Write-Host "   Stop-VM -Name $VMName" -ForegroundColor White
+Write-Host "`nThen test deployment with:"
+Write-Host "   .\NestedAlmaLab\scripts\deploy-with-cloudinit.ps1 -VMCount 1 -StartVMs" -ForegroundColor White
