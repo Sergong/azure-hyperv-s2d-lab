@@ -258,18 +258,6 @@ write_files:
       IPV4_FAILURE_FATAL=no
       IPV6INIT=no
       NAME=eth0
-  - path: /etc/cloud/cloud.cfg.d/99_force_nocloud.cfg
-    permissions: '0644'
-    owner: root:root
-    content: |
-      # Force NoCloud data source only
-      datasource_list: [ NoCloud ]
-      datasource:
-        NoCloud:
-          # Look for cidata volume label on CD-ROM devices
-          fs_label: cidata
-          # Explicitly check these device paths
-          seedfrom: /dev/sr0
   - path: /usr/local/bin/cloud-init-debug
     permissions: '0755'
     owner: root:root
@@ -371,7 +359,7 @@ ethernets:
     
     # Method 1: Use mkisofs if available
     try {
-        $result = mkisofs -output $isoPath -volid cidata -joliet -rock $vmCloudInitPath 2>$null
+        $result = mkisofs -output $isoPath -volid CD_ROM -joliet -rock $vmCloudInitPath 2>$null
         if ($LASTEXITCODE -eq 0) {
             $isoCreated = $true
             Write-Host "  Created cloud-init ISO using mkisofs" -ForegroundColor Gray
@@ -381,7 +369,7 @@ ethernets:
     # Method 2: Use genisoimage if available
     if (-not $isoCreated) {
         try {
-            $result = genisoimage -output $isoPath -volid cidata -joliet -rock $vmCloudInitPath 2>$null
+            $result = genisoimage -output $isoPath -volid CD_ROM -joliet -rock $vmCloudInitPath 2>$null
             if ($LASTEXITCODE -eq 0) {
                 $isoCreated = $true
                 Write-Host "  Created cloud-init ISO using genisoimage" -ForegroundColor Gray
@@ -430,7 +418,7 @@ ethernets:
             # Use IMAPI2 COM interface to create ISO
             $mediaType = 1  # IMAPI_MEDIA_TYPE_DISK
             $image = New-Object -ComObject IMAPI2.MsftFileSystemImage
-            $image.VolumeName = "cidata"
+            $image.VolumeName = "CD_ROM"
             $image.FileSystemsToCreate = 3  # ISO9660 + Joliet
             
             $dir = $image.Root
