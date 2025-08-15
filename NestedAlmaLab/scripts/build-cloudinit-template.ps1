@@ -133,6 +133,7 @@ function New-PackerTemplate {
         $template += "  # Boot configuration for Generation 2 (UEFI)`n"
         $template += "  boot_wait = `"10s`"`n"
         $template += "  boot_command = [`n"
+        $template += "    `"e`",                   # Type an e to edit the grub startup`n"
         $template += "    `"<down><down>`",        # Navigate to third line (linuxefi line)`n"
         $template += "    `"<end>`",               # Move to end of the linuxefi line`n"
         $template += "    `" text`",               # Add text mode`n"
