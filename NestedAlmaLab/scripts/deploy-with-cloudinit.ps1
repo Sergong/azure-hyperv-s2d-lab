@@ -73,6 +73,8 @@ if ([string]::IsNullOrWhiteSpace($TemplatePath)) {
     }
     
     $possiblePaths = @(
+        (Join-Path $projectRoot "output-almalinux-cloudinit-gen2"),
+        (Join-Path $projectRoot "output-almalinux-cloudinit-gen1"),
         (Join-Path $projectRoot "output-almalinux-simple"),
         (Join-Path $projectRoot "output-almalinux"),
         "C:\Packer\Output",

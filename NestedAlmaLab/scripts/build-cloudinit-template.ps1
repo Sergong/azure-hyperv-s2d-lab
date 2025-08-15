@@ -56,8 +56,8 @@ if ($Force -and (Test-Path $outputPath)) {
     Remove-Item $outputPath -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# Create Packer template for cloud-init
-$packerTemplate = @"
+# Create Generation 1 Packer template
+$packerTemplateGen1 = @"
 packer {
   required_plugins {
     hyperv = {
@@ -73,41 +73,33 @@ variable "iso_path" {
   default     = "$($ISOPath -replace '\\', '\\\\')"
 }
 
-variable "generation" {
-  type        = number
-  description = "Hyper-V generation (1 or 2)"
-  default     = $Generation
-}
-
-source "hyperv-iso" "almalinux-cloudinit" {
+source "hyperv-iso" "almalinux-cloudinit-gen1" {
   # ISO configuration
   iso_url      = var.iso_path
   iso_checksum = "none"
-  iso_target_path = "C:/temp/packer-almalinux.iso"
+  iso_target_path = "C:/temp/packer-almalinux-gen1.iso"
   
   # VM configuration
-  vm_name              = "AlmaLinux-CloudInit-Template"
-  generation           = var.generation
+  vm_name              = "AlmaLinux-CloudInit-Gen1-Template"
+  generation           = 1
   cpus                 = 2
   memory               = 2048
   disk_size            = 20480
-  enable_secure_boot   = false
-  secure_boot_template = "MicrosoftUEFICertificateAuthority"
   
   # Network configuration
   switch_name = "PackerInternal"
   
-  # Boot configuration
+  # Boot configuration for Generation 1 (BIOS)
   boot_wait = "10s"
   boot_command = [
-    "<tab>",
-    " text",
+    "<tab>",              # Edit the default boot entry
+    " text",              # Add text mode
     " inst.ks=http://{{.HTTPIP}}:{{.HTTPPort}}/ks-with-cloudinit.cfg",
     " ip=192.168.200.100::192.168.200.1:255.255.255.0:almavm:eth0:none:8.8.8.8",
     " biosdevname=0",
     " net.ifnames=0",
     " rd.live.check=0",
-    "<enter>"
+    "<enter>"             # Boot with modified parameters
   ]
   
   # HTTP server for kickstart
@@ -126,7 +118,7 @@ source "hyperv-iso" "almalinux-cloudinit" {
   shutdown_timeout = "30m"
   
   # Output configuration
-  output_directory = "output-almalinux-cloudinit"
+  output_directory = "output-almalinux-cloudinit-gen1"
   
   # Keep registered for debugging if needed
   keep_registered = false
@@ -135,8 +127,85 @@ source "hyperv-iso" "almalinux-cloudinit" {
   enable_virtualization_extensions = true
 }
 
+# Create Generation 2 Packer template
+$packerTemplateGen2 = @"
+packer {
+  required_plugins {
+    hyperv = {
+      version = "~> 1"
+      source  = "github.com/hashicorp/hyperv"
+    }
+  }
+}
+
+variable "iso_path" {
+  type        = string
+  description = "Path to AlmaLinux ISO file"
+  default     = "$($ISOPath -replace '\\', '\\\\')"
+}
+
+source "hyperv-iso" "almalinux-cloudinit-gen2" {
+  # ISO configuration
+  iso_url      = var.iso_path
+  iso_checksum = "none"
+  iso_target_path = "C:/temp/packer-almalinux-gen2.iso"
+  
+  # VM configuration
+  vm_name              = "AlmaLinux-CloudInit-Gen2-Template"
+  generation           = 2
+  cpus                 = 2
+  memory               = 2048
+  disk_size            = 20480
+  enable_secure_boot   = false
+  secure_boot_template = "MicrosoftUEFICertificateAuthority"
+  
+  # Network configuration
+  switch_name = "PackerInternal"
+  
+  # Boot configuration for Generation 2 (UEFI)
+  boot_wait = "10s"
+  boot_command = [
+    "<down><down>",        # Navigate to third line (linuxefi line)
+    "<end>",               # Move to end of the linuxefi line
+    " text",               # Add text mode
+    " inst.ks=http://{{.HTTPIP}}:{{.HTTPPort}}/ks-with-cloudinit.cfg",
+    " ip=192.168.200.100::192.168.200.1:255.255.255.0:almavm:eth0:none:8.8.8.8",
+    " biosdevname=0",
+    " net.ifnames=0",
+    " rd.live.check=0",
+    "<enter>"             # Boot with modified parameters
+  ]
+  
+  # HTTP server for kickstart
+  http_directory = "templates/AlmaLinux/hyperv"
+  http_port_min  = 8080
+  http_port_max  = 8090
+  
+  # SSH configuration
+  ssh_username = "root"
+  ssh_password = "packer"
+  ssh_timeout = "60m"
+  ssh_handshake_attempts = 100
+  
+  # Shutdown configuration  
+  shutdown_command = "systemctl poweroff"
+  shutdown_timeout = "30m"
+  
+  # Output configuration
+  output_directory = "output-almalinux-cloudinit-gen2"
+  
+  # Keep registered for debugging if needed
+  keep_registered = false
+  
+  # Additional settings for nested virtualization
+  enable_virtualization_extensions = true
+}
+
+# Common build section for both templates
+$buildSection = @"
+
 build {
-  sources = ["source.hyperv-iso.almalinux-cloudinit"]
+  sources = ["source.hyperv-iso.SOURCENAME"]
   
   provisioner "shell" {
     inline = [
@@ -239,9 +308,25 @@ build {
 }
 "@
 
-# Save the Packer template
-$templatePath = Join-Path $projectRoot "almalinux-cloudinit.pkr.hcl"
-$packerTemplate | Set-Content -Path $templatePath -Encoding UTF8
+# Complete the templates with build section
+$packerTemplateGen1 += ($buildSection -replace "SOURCENAME", "almalinux-cloudinit-gen1")
+$packerTemplateGen2 += ($buildSection -replace "SOURCENAME", "almalinux-cloudinit-gen2")
+
+# Determine which template to create based on Generation parameter
+if ($Generation -eq 1) {
+    $templatePath = Join-Path $projectRoot "almalinux-cloudinit-gen1.pkr.hcl"
+    $packerTemplateGen1 | Set-Content -Path $templatePath -Encoding UTF8
+    $outputPath = Join-Path $projectRoot "output-almalinux-cloudinit-gen1"
+    Write-Host "Generation 1 Packer template created: $templatePath" -ForegroundColor Green
+} elseif ($Generation -eq 2) {
+    $templatePath = Join-Path $projectRoot "almalinux-cloudinit-gen2.pkr.hcl"
+    $packerTemplateGen2 | Set-Content -Path $templatePath -Encoding UTF8
+    $outputPath = Join-Path $projectRoot "output-almalinux-cloudinit-gen2"
+    Write-Host "Generation 2 Packer template created: $templatePath" -ForegroundColor Green
+} else {
+    Write-Error "Invalid generation specified: $Generation. Must be 1 or 2."
+    exit 1
+}
 
 Write-Host "Packer template created: $templatePath" -ForegroundColor Green
 
