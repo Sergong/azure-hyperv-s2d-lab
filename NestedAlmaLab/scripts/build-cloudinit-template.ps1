@@ -200,10 +200,8 @@ build {
       "datasource_list: [ NoCloud, None ]",
       "datasource:",
       "  NoCloud:",
-      "    # Look for seed data on CD-ROM",
+      "    # Look for seed data on CD-ROM with correct label",
       "    fs_label: CD_ROM",
-      "    # Fallback locations",
-      "    seedfrom: file:///dev/sr0",
       "NOCLOUDEOF",
       
       # Verify the configuration was created properly
