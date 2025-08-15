@@ -144,30 +144,8 @@ New-Item -ItemType Directory -Path $VMPath, $VHDPath -Force | Out-Null
 $cloudInitPath = Join-Path $VMPath "cloud-init"
 New-Item -ItemType Directory -Path $cloudInitPath -Force | Out-Null
 
-# Function to generate password hash for cloud-init
-function Get-PasswordHash {
-    param([string]$Password)
-    
-    # Generate SHA-512 hash for cloud-init chpasswd
-    # Using Python to generate the hash since it's more reliable
-    try {
-        # Try to use Python to generate a proper SHA-512 hash
-        $salt = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 16 | ForEach-Object {[char]$_})
-        $pythonCommand = "import crypt; print(crypt.crypt('$Password', crypt.mksalt(crypt.METHOD_SHA512)))"
-        $hash = python3 -c $pythonCommand 2>$null
-        
-        if ($hash -and $hash.StartsWith('$6$')) {
-            Write-Host "  Generated SHA-512 password hash" -ForegroundColor Gray
-            return $hash
-        }
-    } catch {
-        Write-Warning "Could not generate password hash with Python, using plain text"
-    }
-    
-    # Fallback to plain text if hashing fails
-    Write-Host "  Using plain text password (cloud-init will hash it)" -ForegroundColor Gray
-    return $Password
-}
+# Note: We'll rely on direct chpasswd commands in runcmd instead of the chpasswd section
+# since Windows PowerShell cannot generate Unix password hashes
 
 # Function to create cloud-init ISO
 function New-CloudInitISO {
@@ -188,10 +166,6 @@ local-hostname: $VMName
     
     $metaDataPath = Join-Path $vmCloudInitPath "meta-data"
     $metaData | Set-Content -Path $metaDataPath -Encoding UTF8
-    
-    # Generate password hashes
-    $userPasswordHash = Get-PasswordHash $UserPassword
-    $rootPasswordHash = Get-PasswordHash $RootPassword
     
     # Create user-data file
     $userData = @"
@@ -215,7 +189,7 @@ cloud_init_modules:
 hostname: $VMName
 fqdn: $VMName.lab.local
 
-# Configure users - create new user and set passwords
+# Configure users - create new user (passwords will be set in runcmd)
 users:
   - name: root
     lock_passwd: false
@@ -225,13 +199,6 @@ users:
     shell: /bin/bash
     lock_passwd: false
     ssh_authorized_keys: []
-
-# Set passwords for both root and user using chpasswd (plain text)
-chpasswd:
-  list: |
-    root:$RootPassword
-    ${Username}:$UserPassword
-  expire: False
 
 # SSH configuration - force enable password auth
 ssh_pwauth: True
