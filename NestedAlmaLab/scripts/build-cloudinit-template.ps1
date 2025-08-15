@@ -179,9 +179,9 @@ build {
       # Clear network configuration that might conflict
       "rm -f /etc/NetworkManager/system-connections/Wired*",
       
-      # Ensure cloud-init will run on first boot
-      "touch /etc/cloud/cloud-init.disabled",
-      "rm -f /etc/cloud/cloud-init.disabled",
+      # Ensure cloud-init will run on first boot - do NOT create disabled files
+      "rm -f /etc/cloud/cloud-init.disabled /run/cloud-init/disabled /var/lib/cloud/data/disabled",
+      "systemctl enable cloud-init-local cloud-init cloud-config cloud-final",
       
       "echo 'Cloud-init template build completed' >> /var/log/packer-build.log"
     ]
