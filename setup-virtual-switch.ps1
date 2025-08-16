@@ -38,7 +38,7 @@ try {
         Stop-Transcript
         exit 1
     }
-    Write-Host "✓ Hyper-V feature is installed"
+    Write-Host "[OK] Hyper-V feature is installed"
 
     # Check if virtual switch already exists
     Write-Host ""
@@ -46,7 +46,7 @@ try {
     $existingSwitch = Get-VMSwitch -Name $SwitchName -ErrorAction SilentlyContinue
     
     if ($existingSwitch) {
-        Write-Host "✓ Virtual switch '$SwitchName' already exists"
+        Write-Host "[OK] Virtual switch '$SwitchName' already exists"
         Write-Host "  Switch Type: $($existingSwitch.SwitchType)"
         Write-Host "  Creation Time: $($existingSwitch.CreationTime)"
         
@@ -62,7 +62,7 @@ try {
                 Write-Host "  Current IP: $($ipConfig.IPAddress)/$($ipConfig.PrefixLength)"
                 
                 if ($ipConfig.IPAddress -eq $HostIP -and $ipConfig.PrefixLength -eq $PrefixLength) {
-                    Write-Host "✓ IP configuration is already correct"
+                    Write-Host "[OK] IP configuration is already correct"
                 } else {
                     Write-Warning "IP configuration differs from desired settings"
                     $reconfigure = Read-Host "Do you want to reconfigure the IP address? (y/N)"
@@ -70,13 +70,13 @@ try {
                         Write-Host "Reconfiguring IP address..."
                         Remove-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
                         New-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -IPAddress $HostIP -PrefixLength $PrefixLength -ErrorAction Stop
-                        Write-Host "✓ IP address reconfigured to $HostIP/$PrefixLength"
+                        Write-Host "[OK] IP address reconfigured to $HostIP/$PrefixLength"
                     }
                 }
             } else {
                 Write-Host "No IP address configured, setting up..."
                 New-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -IPAddress $HostIP -PrefixLength $PrefixLength -ErrorAction Stop
-                Write-Host "✓ IP address configured: $HostIP/$PrefixLength"
+                Write-Host "[OK] IP address configured: $HostIP/$PrefixLength"
             }
         }
     } else {
@@ -84,7 +84,7 @@ try {
         
         # Create an internal switch for nested VMs
         $switch = New-VMSwitch -Name $SwitchName -SwitchType Internal
-        Write-Host "✓ Virtual switch created: $($switch.Name)"
+        Write-Host "[OK] Virtual switch created: $($switch.Name)"
         
         # Wait a moment for the adapter to be ready
         Start-Sleep -Seconds 3
@@ -101,7 +101,7 @@ try {
             # Set static IP for the host side of the switch
             New-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -IPAddress $HostIP -PrefixLength $PrefixLength -ErrorAction Stop
             
-            Write-Host "✓ Virtual switch '$SwitchName' created and configured successfully"
+            Write-Host "[OK] Virtual switch '$SwitchName' created and configured successfully"
             Write-Host "  Host IP: $HostIP/$PrefixLength"
             Write-Host "  Network Range: 192.168.100.0/24"
         } else {
@@ -115,7 +115,7 @@ try {
     $existingNAT = Get-NetNat -Name $NATName -ErrorAction SilentlyContinue
     
     if ($existingNAT) {
-        Write-Host "✓ NAT configuration already exists: $($existingNAT.Name)"
+        Write-Host "[OK] NAT configuration already exists: $($existingNAT.Name)"
         Write-Host "  Internal Prefix: $($existingNAT.InternalIPInterfaceAddressPrefix)"
     } else {
         # Only create NAT on the primary node to avoid conflicts
@@ -123,7 +123,7 @@ try {
             Write-Host "Creating NAT configuration for internet access..."
             try {
                 $nat = New-NetNat -Name $NATName -InternalIPInterfaceAddressPrefix "192.168.100.0/24"
-                Write-Host "✓ NAT configuration created successfully"
+                Write-Host "[OK] NAT configuration created successfully"
                 Write-Host "  Name: $($nat.Name)"
                 Write-Host "  Internal Prefix: $($nat.InternalIPInterfaceAddressPrefix)"
                 Write-Host "  Nested VMs will have internet access through NAT"
@@ -143,13 +143,13 @@ try {
     Write-Host "==========================================="
     
     $finalSwitch = Get-VMSwitch -Name $SwitchName
-    Write-Host "✓ Switch Name: $($finalSwitch.Name)"
-    Write-Host "✓ Switch Type: $($finalSwitch.SwitchType)"
-    Write-Host "✓ Switch ID: $($finalSwitch.Id)"
+    Write-Host "[OK] Switch Name: $($finalSwitch.Name)"
+    Write-Host "[OK] Switch Type: $($finalSwitch.SwitchType)"
+    Write-Host "[OK] Switch ID: $($finalSwitch.Id)"
     
     $finalAdapter = Get-NetAdapter -Name "vEthernet ($SwitchName)"
     $finalIP = Get-NetIPAddress -InterfaceIndex $finalAdapter.InterfaceIndex -AddressFamily IPv4
-    Write-Host "✓ Host IP: $($finalIP.IPAddress)/$($finalIP.PrefixLength)"
+    Write-Host "[OK] Host IP: $($finalIP.IPAddress)/$($finalIP.PrefixLength)"
     
     Write-Host ""
     Write-Host "Nested VM Network Configuration:"
@@ -162,7 +162,7 @@ try {
     
     $finalNAT = Get-NetNat -Name $NATName -ErrorAction SilentlyContinue
     if ($finalNAT) {
-        Write-Host "✓ NAT enabled for internet access"
+        Write-Host "[OK] NAT enabled for internet access"
     } else {
         Write-Host "⚠ NAT not configured - VMs will have limited internet access"
     }

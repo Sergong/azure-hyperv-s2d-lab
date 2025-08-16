@@ -23,12 +23,12 @@ Write-Host "   `$sshKey = Get-Content ~/.ssh/id_rsa.pub"
 Write-Host "   .\deploy-with-cloudinit.ps1 -SSHPublicKey `$sshKey -StartVMs" -ForegroundColor Yellow
 
 Write-Host "`n=== Key Benefits of Cloud-init Approach ===" -ForegroundColor Green
-Write-Host "✓ Each VM gets a unique IP address automatically"
-Write-Host "✓ No need to rebuild templates for different configurations"
-Write-Host "✓ Can customize users, passwords, and SSH keys per deployment"
-Write-Host "✓ Network configuration is applied at boot time"
-Write-Host "✓ Supports both password and key-based SSH authentication"
-Write-Host "✓ VMs are immediately accessible after boot"
+Write-Host "[OK] Each VM gets a unique IP address automatically"
+Write-Host "[OK] No need to rebuild templates for different configurations"
+Write-Host "[OK] Can customize users, passwords, and SSH keys per deployment"
+Write-Host "[OK] Network configuration is applied at boot time"
+Write-Host "[OK] Supports both password and key-based SSH authentication"
+Write-Host "[OK] VMs are immediately accessible after boot"
 
 Write-Host "`n=== Cloud-init vs. Kickstart Comparison ===" -ForegroundColor White
 Write-Host "Kickstart (current approach):"

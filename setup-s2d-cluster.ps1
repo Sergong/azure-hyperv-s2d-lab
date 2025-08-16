@@ -46,7 +46,7 @@ foreach ($feature in $requiredFeatures) {
         Stop-Transcript
         exit 1
     }
-Write-Host "✓ Feature '$feature' is installed"
+Write-Host "[OK] Feature '$feature' is installed"
 }
 
 # Step 1.5: Create virtual switch for nested VMs (if it doesn't exist)
@@ -56,7 +56,7 @@ try {
     $existingSwitch = Get-VMSwitch -Name $switchName -ErrorAction SilentlyContinue
     
     if ($existingSwitch) {
-        Write-Host "✓ Virtual switch '$switchName' already exists"
+        Write-Host "[OK] Virtual switch '$switchName' already exists"
         Write-Host "  Switch Type: $($existingSwitch.SwitchType)"
         if ($existingSwitch.NetAdapterInterfaceDescription) {
             Write-Host "  Network Adapter: $($existingSwitch.NetAdapterInterfaceDescription)"
@@ -79,7 +79,7 @@ try {
         # Set static IP for the host side of the switch
         New-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -IPAddress "192.168.100.1" -PrefixLength 24 -ErrorAction Stop
         
-        Write-Host "✓ Virtual switch '$switchName' created successfully"
+        Write-Host "[OK] Virtual switch '$switchName' created successfully"
         Write-Host "  Host IP: 192.168.100.1/24"
         Write-Host "  Nested VMs can use DHCP or static IPs in 192.168.100.0/24 range"
         
@@ -90,7 +90,7 @@ try {
             if (-not $existingNAT) {
                 Write-Host "Creating NAT configuration for internet access..."
                 New-NetNat -Name $natName -InternalIPInterfaceAddressPrefix "192.168.100.0/24" | Out-Null
-                Write-Host "✓ NAT configuration created - nested VMs will have internet access"
+                Write-Host "[OK] NAT configuration created - nested VMs will have internet access"
             }
         } catch {
             Write-Warning "Could not create NAT configuration: $($_.Exception.Message)"
@@ -110,7 +110,7 @@ foreach ($node in $NodeNames) {
     try {
         $result = Test-Connection -ComputerName $node -Count 2 -Quiet -ErrorAction Stop
         if ($result) {
-            Write-Host "✓ Node '$node' is accessible"
+            Write-Host "[OK] Node '$node' is accessible"
         } else {
             throw "Ping failed"
         }
@@ -152,7 +152,7 @@ try {
     $validationResult = Test-Cluster -Node $NodeNames -Include "Storage Spaces Direct", "Inventory", "Network", "System Configuration" -ReportName "C:\ClusterValidation"
     
     if ($validationResult) {
-        Write-Host "✓ Cluster validation completed. Check C:\ClusterValidation.htm for detailed results."
+        Write-Host "[OK] Cluster validation completed. Check C:\ClusterValidation.htm for detailed results."
     }
 } catch {
     Write-Warning "Cluster validation encountered issues: $($_.Exception.Message)"
@@ -183,7 +183,7 @@ try {
     $cluster = New-Cluster -Name $ClusterName -Node $NodeNames -StaticAddress $ClusterIP -NoStorage -Force
     
     if ($cluster) {
-        Write-Host "✓ Failover cluster '$ClusterName' created successfully!"
+        Write-Host "[OK] Failover cluster '$ClusterName' created successfully!"
         Write-Host "Cluster nodes:"
         Get-ClusterNode | ForEach-Object { Write-Host "  - $($_.Name): $($_.State)" }
     }
@@ -237,7 +237,7 @@ try {
     Write-Host "Enabling S2D... This may take several minutes."
     Enable-ClusterS2D -Confirm:$false -Verbose
     
-    Write-Host "✓ Storage Spaces Direct enabled successfully!"
+    Write-Host "[OK] Storage Spaces Direct enabled successfully!"
     
     # Show S2D status
     Write-Host "`nS2D Cluster Information:"
@@ -274,7 +274,7 @@ try {
     # Check storage pool
     $storagePool = Get-StoragePool -FriendlyName "S2D on $ClusterName" -ErrorAction SilentlyContinue
     if ($storagePool) {
-        Write-Host "✓ S2D storage pool found: $($storagePool.FriendlyName)"
+        Write-Host "[OK] S2D storage pool found: $($storagePool.FriendlyName)"
         Write-Host "  Total Size: $([math]::Round($storagePool.Size/1GB,2)) GB"
         Write-Host "  Available: $([math]::Round($storagePool.AllocatedSize/1GB,2)) GB"
         
@@ -283,7 +283,7 @@ try {
             Write-Host "Creating demo volume 'S2D-Volume01'..."
             $volume = New-Volume -StoragePoolFriendlyName $storagePool.FriendlyName -FriendlyName "S2D-Volume01" -FileSystem NTFS -Size 100GB -ErrorAction SilentlyContinue
             if ($volume) {
-                Write-Host "✓ Demo volume created: $($volume.DriveLetter): $([math]::Round($volume.SizeRemaining/1GB,2)) GB available"
+                Write-Host "[OK] Demo volume created: $($volume.DriveLetter): $([math]::Round($volume.SizeRemaining/1GB,2)) GB available"
             }
         } catch {
             Write-Warning "Could not create demo volume: $($_.Exception.Message)"
@@ -303,8 +303,8 @@ Write-Host "==========================================="
 
 try {
     $cluster = Get-Cluster
-    Write-Host "✓ Cluster Name: $($cluster.Name)"
-    Write-Host "✓ Cluster IP: $($cluster.Cluster)"
+    Write-Host "[OK] Cluster Name: $($cluster.Name)"
+    Write-Host "[OK] Cluster IP: $($cluster.Cluster)"
     
     Write-Host "`nCluster Nodes:"
     Get-ClusterNode | ForEach-Object { 

@@ -9,7 +9,7 @@ Write-Host ""
 # Check if NodeReady marker exists
 Write-Host "1. Checking NodeReady marker..." -ForegroundColor Yellow
 if (Test-Path "C:\NodeReady.txt") {
-    Write-Host "✓ NodeReady.txt exists" -ForegroundColor Green
+    Write-Host "[OK] NodeReady.txt exists" -ForegroundColor Green
     Get-Content "C:\NodeReady.txt"
 } else {
     Write-Host "✗ NodeReady.txt not found" -ForegroundColor Red
@@ -20,7 +20,7 @@ Write-Host ""
 Write-Host "2. Checking S2D setup script..." -ForegroundColor Yellow
 if (Test-Path "C:\setup-s2d-cluster.ps1") {
     $scriptInfo = Get-Item "C:\setup-s2d-cluster.ps1"
-    Write-Host "✓ setup-s2d-cluster.ps1 exists" -ForegroundColor Green
+    Write-Host "[OK] setup-s2d-cluster.ps1 exists" -ForegroundColor Green
     Write-Host "  Size: $($scriptInfo.Length) bytes"
     Write-Host "  Created: $($scriptInfo.CreationTime)"
     Write-Host "  Modified: $($scriptInfo.LastWriteTime)"
@@ -37,7 +37,7 @@ Write-Host ""
 # Check bootstrap logs
 Write-Host "3. Checking bootstrap logs..." -ForegroundColor Yellow
 if (Test-Path "C:\bootstrap-extension.txt") {
-    Write-Host "✓ Bootstrap log exists" -ForegroundColor Green
+    Write-Host "[OK] Bootstrap log exists" -ForegroundColor Green
     Write-Host "--- Last 20 lines of bootstrap log ---" -ForegroundColor Cyan
     Get-Content "C:\bootstrap-extension.txt" -Tail 20
 } else {
@@ -51,7 +51,7 @@ $features = @('Hyper-V', 'Failover-Clustering', 'FS-FileServer')
 foreach ($feature in $features) {
     $featureState = Get-WindowsFeature -Name $feature
     if ($featureState.InstallState -eq 'Installed') {
-        Write-Host "✓ $feature is installed" -ForegroundColor Green
+        Write-Host "[OK] $feature is installed" -ForegroundColor Green
     } else {
         Write-Host "✗ $feature is NOT installed (State: $($featureState.InstallState))" -ForegroundColor Red
     }
@@ -70,7 +70,7 @@ Write-Host "6. Testing network connectivity to blob storage..." -ForegroundColor
 try {
     $testUrl = "https://hypervscripts1jwvkvf4.blob.core.windows.net/scripts/setup-s2d-cluster.ps1"
     $response = Invoke-WebRequest -Uri $testUrl -Method Head -UseBasicParsing -TimeoutSec 10
-    Write-Host "✓ Can reach blob storage (HTTP $($response.StatusCode))" -ForegroundColor Green
+    Write-Host "[OK] Can reach blob storage (HTTP $($response.StatusCode))" -ForegroundColor Green
 } catch {
     Write-Host "✗ Cannot reach blob storage: $($_.Exception.Message)" -ForegroundColor Red
 }
