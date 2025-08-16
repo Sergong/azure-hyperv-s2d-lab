@@ -5,11 +5,11 @@ param (
 )
 
 function Enable-CredSSP {
-    Write-Host "🔐 Enabling CredSSP on gateway..." -ForegroundColor Cyan
+    Write-Host "Enabling CredSSP on gateway..."
     Enable-WSManCredSSP -Role Client -DelegateComputer $ClusterNodes -Force
 
     foreach ($node in $ClusterNodes) {
-        Write-Host "🔐 Enabling CredSSP on $node..." -ForegroundColor Cyan
+        Write-Host "Enabling CredSSP on $node..."
         Invoke-Command -ComputerName $node -ScriptBlock {
             Enable-WSManCredSSP -Role Server -Force
         } -Authentication Credssp -Credential (Get-Credential)
@@ -17,7 +17,7 @@ function Enable-CredSSP {
 }
 
 function Resolve-FQDNs {
-    Write-Host "🌐 Resolving FQDNs..." -ForegroundColor Cyan
+    Write-Host "Resolving FQDNs..."
     $fqdnMap = @{}
     foreach ($node in $ClusterNodes) {
         try {
@@ -34,7 +34,7 @@ function Resolve-FQDNs {
 function Enable-WinRMHTTPS {
     param ($Node)
 
-    Write-Host "🔒 Configuring WinRM HTTPS on $Node..." -ForegroundColor Cyan
+    Write-Host "Configuring WinRM HTTPS on $Node..."
     Invoke-Command -ComputerName $Node -ScriptBlock {
         param($CertCN, $CertYears)
 
@@ -49,7 +49,7 @@ function Enable-WinRMHTTPS {
 function Configure-FirewallRules {
     param ($Node)
 
-    Write-Host "🔥 Validating firewall rules on $Node..." -ForegroundColor Cyan
+    Write-Host "Validating firewall rules on $Node..."
     Invoke-Command -ComputerName $Node -ScriptBlock {
         $groups = @(
             "Windows Remote Management",
@@ -62,9 +62,9 @@ function Configure-FirewallRules {
             $rules = Get-NetFirewallRule -DisplayGroup $group -ErrorAction SilentlyContinue
             if ($rules) {
                 $rules | Set-NetFirewallRule -Enabled True
-                Write-Host "✅ Enabled: $group"
+                Write-Host "Enabled: $group"
             } else {
-                Write-Warning "⚠️ Rule group not found: $group"
+                Write-Warning "Rule group not found: $group"
             }
         }
     } -Authentication Credssp -Credential (Get-Credential)
@@ -74,16 +74,15 @@ function Configure-TrustedHosts {
     param ($FQDNs)
 
     $trustedList = ($FQDNs -join ",")
-    Write-Host "🧭 Setting TrustedHosts to: $trustedList" -ForegroundColor Cyan
+    Write-Host "Setting TrustedHosts to: $trustedList"
     Set-Item WSMan:\localhost\Client\TrustedHosts -Value $trustedList
     Restart-Service WinRM
 
-    # Validation
     $current = (Get-Item WSMan:\localhost\Client\TrustedHosts).Value
     if ($current -eq $trustedList) {
-        Write-Host "✅ TrustedHosts successfully set." -ForegroundColor Green
+        Write-Host "TrustedHosts successfully set."
     } else {
-        Write-Warning "❌ TrustedHosts mismatch. Current value: $current"
+        Write-Warning "TrustedHosts mismatch. Current value: $current"
     }
 }
 
@@ -97,5 +96,5 @@ foreach ($node in $fqdnMap.Values) {
     Configure-FirewallRules -Node $node
 }
 
-Write-Host "`n✅ Configuration complete. FQDN map:" -ForegroundColor Green
+Write-Host "`nConfiguration complete. FQDN map:"
 $fqdnMap | Format-Table -AutoSize
