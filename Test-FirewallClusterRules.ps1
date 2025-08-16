@@ -25,19 +25,26 @@ function Test-And-FixFirewallRules {
             $rule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
             if ($rule) {
                 $status = if ($rule.Enabled -eq "True") { "Enabled" } else { "Disabled" }
-                if ($status -eq "Disabled") {
-                    if ($using:Remediate) {
-                        $rule | Set-NetFirewallRule -Enabled True
-                        $status = "Remediated"
-                    }
+                if ($status -eq "Disabled" -and $using:Remediate) {
+                    Enable-NetFirewallRule -DisplayName $ruleName
+                    $status = "Remediated"
                 }
             } else {
                 $status = "Missing"
+                if ($using:Remediate) {
+                    # Create a basic inbound rule as a fallback
+                    New-NetFirewallRule -DisplayName $ruleName `
+                        -Direction Inbound -Action Allow `
+                        -Protocol TCP -LocalPort 3343 `
+                        -Profile Any -Enabled True `
+                        -Group "Failover Clustering"
+                    $status = "Created"
+                }
             }
             $results += [PSCustomObject]@{
-                Node       = $env:COMPUTERNAME
-                RuleName   = $ruleName
-                Status     = $status
+                Node     = $env:COMPUTERNAME
+                RuleName = $ruleName
+                Status   = $status
             }
         }
         return $results
