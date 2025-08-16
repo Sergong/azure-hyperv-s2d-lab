@@ -1,52 +1,58 @@
-# Run this script as Administrator on hyperv-node-1
-
 function Set-WMINameSpaceSecurity {
     param(
         [string]$namespace,
         [string]$principal
     )
-    
-    $ErrorActionPreference = "Stop"
-    
+
     try {
-        # Get the security descriptor for the WMI namespace
-        $security = Get-WmiObject -Namespace $namespace -Class "__SystemSecurity"
-        $binarySD = $security.GetSecurityDescriptor().Descriptor
-        
-        # Convert binary security descriptor to SDDL format
+        # Get the __SystemSecurity instance
+        $security = Get-WmiObject -Namespace $namespace -Class __SystemSecurity
+
+        # Prepare the converter for SDDL <-> Binary conversion
         $converter = New-Object System.Management.ManagementClass Win32_SecurityDescriptorHelper
-        $stringSD = $converter.BinarySDToSDDL($binarySD)
-        $SDDL = $stringSD.SDDL
-        
-        # Define only the access rights we actually need for Hyper-V management
-        $WBEM_ENABLE = 1           # Enable Account
-        $WBEM_METHOD_EXECUTE = 2   # Execute Methods  
-        $WBEM_REMOTE_ACCESS = 32   # Remote Enable
-        $READ_CONTROL = 131072     # Read Security
-        
-        # Calculate permissions needed for Hyper-V management
-        $permissionMask = $WBEM_ENABLE + $WBEM_METHOD_EXECUTE + $WBEM_REMOTE_ACCESS + $READ_CONTROL
-        
+
+        # Get current security descriptor (binary) using GetSD method (not GetSecurityDescriptor)
+        $result = $security.PsBase.InvokeMethod("GetSD", $null)
+        if ($result.ReturnValue -ne 0) {
+            Write-Error "Failed to get Security Descriptor from $namespace (Return: $($result.ReturnValue))"
+            return $false
+        }
+
+        $binarySD = $result.Descriptor
+
+        # Convert binary to SDDL
+        $SDDLString = $converter.BinarySDToSDDL($binarySD)
+        $SDDL = $SDDLString.SDDL
+
         # Get user SID
         $userSID = (New-Object System.Security.Principal.NTAccount($principal)).Translate([System.Security.Principal.SecurityIdentifier]).Value
-        
-        # Build new ACE (Access Control Entry) - using the variables properly
-        $accessMask = "0x{0:X}" -f $permissionMask
+
+        # Define permissions: Enable (1), Remote Enable(32), Execute(2), Read Control (131072)
+        $WBEM_ENABLE = 1
+        $WBEM_REMOTE_ACCESS = 32
+        $WBEM_METHOD_EXECUTE = 2
+        $READ_CONTROL = 131072
+        $permissionsMask = $WBEM_ENABLE + $WBEM_REMOTE_ACCESS + $WBEM_METHOD_EXECUTE + $READ_CONTROL
+        $accessMask = "0x{0:X}" -f $permissionsMask
+
+        # Prepare new ACE string
         $newACE = "(A;CI;$accessMask;;;$userSID)"
-        
-        # Add the new ACE to the SDDL if user doesn't already have permissions
-        if ($SDDL -notlike "*$userSID*") {
-            $newSDDL = $SDDL.Replace("S:", "$newACE" + "S:")
-            
-            # Convert back to binary and set
-            $binarySDNew = $converter.SDDLToBinarySD($newSDDL)
-            $result = $security.SetSecurityDescriptor($binarySDNew.BinarySD)
-            
-            if ($result.ReturnValue -eq 0) {
+
+        # Check if user already has permissions
+        if ($SDDL -notmatch $userSID) {
+            # Insert the ACE into the discretionary ACL (D: section) of SDDL
+            $newSDDL = $SDDL -replace 'D:', "D:$newACE"
+
+            # Convert back to binary
+            $binaryNewSD = $converter.SDDLToBinarySD($newSDDL)
+
+            # Set the new security descriptor using SetSD method (not SetSecurityDescriptor)
+            $setResult = $security.PsBase.InvokeMethod("SetSD", @($binaryNewSD.BinarySD))
+            if ($setResult.ReturnValue -eq 0) {
                 Write-Host "[OK] Successfully set WMI permissions for $principal on $namespace" -ForegroundColor Green
                 return $true
             } else {
-                Write-Warning "Failed to set WMI permissions on $namespace. Return value: $($result.ReturnValue)"
+                Write-Error "Failed to set permissions on $namespace (Return: $($setResult.ReturnValue))"
                 return $false
             }
         } else {
@@ -54,13 +60,13 @@ function Set-WMINameSpaceSecurity {
             return $true
         }
     } catch {
-        Write-Error "Error setting WMI permissions on $namespace`: $($_.Exception.Message)"
+        Write-Error "Error configuring $namespace`: $($_.Exception.Message)"
         return $false
     }
 }
 
 # Main execution
-$username = "adm-smeeuwsen"  # Replace with actual username
+$username = "adm-smeeuwsen"  # Your actual username
 
 Write-Host "=== Setting WMI permissions for Hyper-V management ===" -ForegroundColor Cyan
 Write-Host "User: $username" -ForegroundColor Yellow
@@ -70,6 +76,7 @@ $namespaces = @("root/interop", "root/cimv2", "root/default")
 $allSuccess = $true
 
 foreach ($namespace in $namespaces) {
+    Write-Host "`nConfiguring permissions for $username on $namespace..." -ForegroundColor Yellow
     $success = Set-WMINameSpaceSecurity -namespace $namespace -principal $username
     $allSuccess = $allSuccess -and $success
 }
