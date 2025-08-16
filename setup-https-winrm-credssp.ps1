@@ -1,15 +1,6 @@
 # setup winrm and credssp
-function Resolve-FQDN {
-    param ($Name)
-    try {
-        $fqdn = [System.Net.Dns]::GetHostEntry($Name).HostName
-        Write-Host "Resolved $Name → $fqdn"
-        return $fqdn
-    } catch {
-        Write-Warning "DNS resolution failed for $Name. Using original name."
-        return $Name
-    }
-}
+
+. .\Resolve-FQDN-Function.ps1
 
 $nodes = @("hyperv-node-0", "hyperv-node-1")
 
