@@ -13,6 +13,7 @@ Write-Host "Starting bootstrap configuration for node: $NodeName"
 Write-Host "Timestamp: $(Get-Date)"
 Write-Host "S2D Script URL parameter: '$S2DScriptUrl'"
 Write-Host "Current user context: $env:USERNAME"
+$MyUser = $env:USERNAME
 Write-Host "Current working directory: $(Get-Location)"
 
 $restartRequired = $false
@@ -135,7 +136,16 @@ try {
         
         Write-Host "Setting trusted hosts: $trustedHostsList"
         Set-Item WSMan:\localhost\Client\TrustedHosts -Value $trustedHostsList -Force
-        
+
+        # Configure local security policy to allow NTLM
+        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value 2
+
+        # Add user to Hyper-V Administrators group
+        Add-LocalGroupMember -Group "Hyper-V Administrators" -Member $MyUser
+
+        # Add user to Remote Management Users group
+        Add-LocalGroupMember -Group "Remote Management Users" -Member $MyUser
+
         # Increase maximum envelope size for cluster operations
         winrm set winrm/config '@{MaxEnvelopeSizekb="2048"}'
         winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="2048"}'

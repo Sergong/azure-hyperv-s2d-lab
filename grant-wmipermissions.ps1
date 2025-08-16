@@ -34,7 +34,7 @@ function Grant-WMIPermissions {
             $result = $security.SetSecurityDescriptor($currentSD.Descriptor)
             
             if ($result.ReturnValue -eq 0) {
-                Write-Host "✓ Successfully configured $namespace" -ForegroundColor Green
+                Write-Host "[OK] Successfully configured $namespace" -ForegroundColor Green
             } else {
                 Write-Warning "Failed to configure $namespace (Return code: $($result.ReturnValue))"
             }
