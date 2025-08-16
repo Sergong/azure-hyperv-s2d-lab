@@ -23,6 +23,8 @@ function Test-And-FixFirewallRules {
         $results = @()
         foreach ($ruleName in $expectedRules) {
             $rule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
+            $null = $rule  # Suppress default object output
+
             if ($rule) {
                 $status = if ($rule.Enabled -eq "True") { "Enabled" } else { "Disabled" }
                 if ($status -eq "Disabled" -and $using:Remediate) {
@@ -41,6 +43,7 @@ function Test-And-FixFirewallRules {
                     $status = "Created"
                 }
             }
+
             $results += [PSCustomObject]@{
                 Node     = $env:COMPUTERNAME
                 RuleName = $ruleName
@@ -48,6 +51,7 @@ function Test-And-FixFirewallRules {
             }
         }
         return $results
+
     } -Credential (Get-Credential) -Authentication Credssp
 }
 
