@@ -43,14 +43,14 @@ function Set-WMINameSpaceSecurity {
             $result = $security.SetSecurityDescriptor($binarySDNew.BinarySD)
             
             if ($result.ReturnValue -eq 0) {
-                Write-Host "✓ Successfully set WMI permissions for $principal on $namespace" -ForegroundColor Green
+                Write-Host "[OK] Successfully set WMI permissions for $principal on $namespace" -ForegroundColor Green
                 return $true
             } else {
                 Write-Warning "Failed to set WMI permissions on $namespace. Return value: $($result.ReturnValue)"
                 return $false
             }
         } else {
-            Write-Host "✓ User $principal already has permissions on $namespace" -ForegroundColor Yellow
+            Write-Host "[OK] User $principal already has permissions on $namespace" -ForegroundColor Yellow
             return $true
         }
     } catch {
@@ -78,7 +78,7 @@ if ($allSuccess) {
     Write-Host "`n=== Restarting WMI service to apply changes ===" -ForegroundColor Cyan
     try {
         Restart-Service -Name "Winmgmt" -Force
-        Write-Host "✓ WMI service restarted successfully" -ForegroundColor Green
+        Write-Host "[OK] WMI service restarted successfully" -ForegroundColor Green
         Write-Host "`n=== WMI permissions configuration completed successfully! ===" -ForegroundColor Green
     } catch {
         Write-Warning "Failed to restart WMI service: $($_.Exception.Message)"
